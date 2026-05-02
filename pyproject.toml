@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kompass"
+version = "2.0.1"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "auditlog3",
+    "bcrypt",
+    "celery",
+    "coverage",
+    "django==5.1.15",
+    "django-celery-beat",
+    "django-celery-email",
+    "django-jet-reboot",
+    "django-markdownify",
+    "django-markdownx",
+    "django-nested-admin",
+    "django-oauth-toolkit",
+    "django-split-settings",
+    "mozilla-django-oidc",
+    "mysqlclient",
+    "openpyxl",
+    "pymemcache",
+    "pypdf",
+    "redis",
+    "rules",
+    "schwifty",
+    "sphinx",
+    "sphinxawesome-theme",
+    "tomli",
+    "uwsgi",
+    "xlsxwriter",
+]
+

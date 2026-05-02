@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
 
-cd /app/jdav_web
+cd /app/kompass
 
-celery -A jdav_web worker -l info
+celery -A kompass.jdav_web worker -l info

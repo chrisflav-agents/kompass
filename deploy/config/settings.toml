@@ -26,10 +26,12 @@ domain = 'jdav-town.de'
 [finance]
 allowance_per_day = 22
 max_night_cost = 11
-aid_per_km_car = 0.10
-aid_per_km_train = 0.15
 
 [links]
+cloud = "https://nextcloud.com"
+dav_360 = "https://dav360.de"
+wiki = "https://wikipedia.org"
+docs = "https://jdav-hd.de/static/docs"
 registration_form = "download-me"
 
 [startpage]
@@ -37,13 +39,6 @@ redirect_url = ''
 root_section = 'wir'
 recent_section = 'aktuelles'
 reports_section = 'berichte'
-
-[sidebar]
-# List of app labels whose admin sidebar sections should be hidden.
-# Available app labels: members, mailer, finance, logindata, django_celery_beat,
-#                       ludwigsburgalpin, material, startpage
-# disabled_apps = ["ludwigsburgalpin"]
-disabled_apps = []
 
 [django]
 deployed = true

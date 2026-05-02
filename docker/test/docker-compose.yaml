@@ -9,9 +9,8 @@ services:
         env_file: docker.env
         environment:
           - KOMPASS_CONFIG_DIR_PATH=/app/config/
-          - DJANGO_SETTINGS_MODULE=jdav_web.settings
+          - DJANGO_SETTINGS_MODULE=kompass.jdav_web.settings
           - DJANGO_TEST_KEEPDB=$DJANGO_TEST_KEEPDB
-          - DJANGO_TEST_VERBOSITY=$DJANGO_TEST_VERBOSITY
         depends_on:
           - redis
           - cache
@@ -21,7 +20,7 @@ services:
           - ./config:/app/config:ro
           - type: bind
             source: ./htmlcov/
-            target: /app/jdav_web/htmlcov/
+            target: /app/kompass/htmlcov/
 
     cache:
         restart: always

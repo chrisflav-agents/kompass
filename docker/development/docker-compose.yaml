@@ -10,7 +10,7 @@ x-kompass:
             USER: ${USERNAME}
     environment:
       - KOMPASS_CONFIG_DIR_PATH=/app/config/
-      - DJANGO_SETTINGS_MODULE=jdav_web.settings
+      - DJANGO_SETTINGS_MODULE=kompass.jdav_web.settings
     env_file: docker.env
     restart: always
     depends_on:
@@ -25,7 +25,7 @@ services:
         stdin_open: true
         tty: true
         volumes:
-          - ./../../jdav_web:/app/jdav_web
+          - ./../../kompass:/app/kompass
           - ./../../docs:/app/docs
           - ./media:/app/media
           - ./config:/app/config:ro

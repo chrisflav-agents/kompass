@@ -3,9 +3,9 @@ x-kompass:
     image: ghcr.io/chrisflav/kompass:latest
     env_file: docker.env
     environment:
-      - DJANGO_SETTINGS_MODULE=jdav_web.settings
+      - DJANGO_SETTINGS_MODULE=kompass.jdav_web.settings
       - KOMPASS_CONFIG_DIR_PATH=/app/config/
-    restart: on-failure
+    restart: always
     depends_on:
       - db
       - redis
@@ -18,31 +18,31 @@ services:
         volumes:
           - uwsgi_data:/tmp/uwsgi/
           - web_static:/app/static/
-          - web_static:/var/www/jdav_web/static/
+          - web_static:/var/www/kompass/static/
           - ./config:/app/config:ro
 
     nginx:
         image: ghcr.io/chrisflav/kompass-nginx:latest
-        restart: on-failure
+        restart: always
         volumes:
           - uwsgi_data:/tmp/uwsgi/
-          - web_static:/var/www/jdav_web/static/:ro
+          - web_static:/var/www/kompass/static/:ro
         ports:
           - "3000:80"
         depends_on:
           - master
 
     db:
-        restart: on-failure
+        restart: always
         image: mariadb:latest
         env_file: docker.env
 
     cache:
-        restart: on-failure
+        restart: always
         image: memcached:alpine
 
     redis:
-        restart: on-failure
+        restart: always
         image: redis:6-alpine
 
     celery_worker:

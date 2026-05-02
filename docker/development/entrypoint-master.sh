@@ -3,7 +3,7 @@
 set -o errexit
 
 mysql_ready() {
-cd /app/jdav_web
+cd /app/kompass
 python << END
 import sys
 
@@ -37,15 +37,15 @@ if ! [ -f /tmp/completed_initial_run ]; then
     make html
     cd /app
 
-    python jdav_web/manage.py compilemessages --locale de
+    python kompass/manage.py compilemessages --locale de
 
     # python jdav_web/manage.py makemigrations
-    python jdav_web/manage.py migrate
+    python kompass/manage.py migrate
 
     touch /tmp/completed_initial_run
 fi
 
-cd jdav_web
+cd kompass
 
-celery -A jdav_web worker -B --scheduler django_celery_beat.schedulers:DatabaseScheduler -l info &
+celery -A kompass.jdav_web worker -B --scheduler django_celery_beat.schedulers:DatabaseScheduler -l info &
 python manage.py runserver 0.0.0.0:8000

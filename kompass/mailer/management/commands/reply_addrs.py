@@ -1,0 +1,42 @@
+import re
+
+from django.core.management.base import BaseCommand
+from kompass.mailer.models import Message
+from kompass.members.models import Member
+
+
+class Command(BaseCommand):
+    help = "Shows reply-to addresses"
+    requires_system_checks = False
+
+    def add_arguments(self, parser):
+        parser.add_argument("--message_id", default="-1")
+        parser.add_argument("--subject", default="")
+
+    def handle(self, *args, **options):
+        replies = []
+        try:
+            message_id = int(options["message_id"])
+            message = Message.objects.get(pk=message_id)
+            if message.reply_to:
+                replies = list(message.reply_to.all())
+                replies.extend(message.reply_to_email_address.all())
+        except (Message.DoesNotExist, ValueError):
+            extracted = re.match(
+                "^([Ww][Gg]: *|[Ff][Ww]: *|[Rr][Ee]: *|[Aa][Ww]: *)* *(.*)$", options["subject"]
+            ).group(2)
+            try:
+                msgs = Message.objects.filter(subject=extracted)
+                message = msgs.all()[0]
+                if message.reply_to:
+                    replies = list(message.reply_to.all())
+                    replies.extend(message.reply_to_email_address.all())
+            except (Message.DoesNotExist, ValueError, IndexError):
+                pass
+
+        if not replies:
+            # send mail to all jugendleiters
+            replies = Member.objects.filter(group__name="Jugendleiter", gets_newsletter=True)
+        forwards = [lst.email for lst in replies]
+
+        self.stdout.write(" ".join(forwards))

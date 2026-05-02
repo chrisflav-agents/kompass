@@ -2,7 +2,7 @@ x-kompass:
     &kompass
     image: ghcr.io/chrisflav/kompass:latest
     environment:
-      - DJANGO_SETTINGS_MODULE=jdav_web.settings
+      - DJANGO_SETTINGS_MODULE=kompass.jdav_web.settings
       - KOMPASS_CONFIG_DIR_PATH=/app/config/
     restart: always
     depends_on:
@@ -16,8 +16,8 @@ services:
         volumes:
           - uwsgi_data:/tmp/uwsgi/
           - web_static:/app/static/
-          - web_static:/var/www/jdav_web/static/
-          - ./media:/var/www/jdav_web/media/
+          - web_static:/var/www/kompass/static/
+          - ./media:/var/www/kompass/media/
           - ./config:/app/config:ro
         networks:
           - main
@@ -29,8 +29,8 @@ services:
         restart: always
         volumes:
           - uwsgi_data:/tmp/uwsgi/
-          - web_static:/var/www/jdav_web/static/:ro
-          - ./media:/var/www/jdav_web/media/:ro
+          - web_static:/var/www/kompass/static/:ro
+          - ./media:/var/www/kompass/media/:ro
         ports:
           - "3000:80"
         depends_on:

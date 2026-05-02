@@ -9,19 +9,19 @@ if ! [ -f completed_initial_run ]; then
 
     cd docs
     make html
-    cp -r build/html /app/jdav_web/static/docs
+    cp -r build/html /app/kompass/static/docs
     cd /app
 
-    python jdav_web/manage.py collectstatic --noinput
-    python jdav_web/manage.py compilemessages --locale de
+    python kompass/manage.py collectstatic --noinput
+    python kompass/manage.py compilemessages --locale de
 
-    python jdav_web/manage.py migrate
-    python jdav_web/manage.py ensuresuperuser
+    python kompass/manage.py migrate
+    python kompass/manage.py ensuresuperuser
 
     # Populate test data on staging environments only
     if [ "$POPULATE_TEST_DATA" = "true" ]; then
         echo 'Populating test data for staging environment...'
-        python jdav_web/manage.py populate_test_data
+        python kompass/manage.py populate_test_data
     fi
 
     touch completed_initial_run
