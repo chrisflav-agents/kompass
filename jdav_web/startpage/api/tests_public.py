@@ -1,0 +1,467 @@
+"""Tests for the startpage public read API and the write-hardening (full_clean).
+
+The ``/public/*`` endpoints are unauthenticated (``auth=None``) and mirror the
+public website views in ``startpage/views.py``; the hardening tests exercise the
+``full_clean`` validation added to the authenticated create/update endpoints,
+which the root API maps to HTTP 422.
+"""
+
+import datetime
+import uuid
+
+from django.conf import settings
+from django.contrib.auth.models import Permission
+from django.contrib.auth.models import User
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import override_settings
+from django.test import TestCase
+from django.utils import timezone
+from members.models import DIVERSE
+from members.models import Group
+from members.models import Member
+from oauth2_provider.models import get_access_token_model
+from oauth2_provider.models import get_application_model
+from startpage.api import schemas
+from startpage.models import FAQ
+from startpage.models import Image
+from startpage.models import MemberOnPost
+from startpage.models import Post
+from startpage.models import Section
+
+Application = get_application_model()
+AccessToken = get_access_token_model()
+
+
+def assert_matches_schema(test, schema_cls, body):
+    """Assert ``body`` carries exactly the keys ``schema_cls`` declares.
+
+    This is the check that would have caught ``PublicMemberBrief`` promising
+    ``prename``/``lastname`` while a resolver omitted them (taxis #506): a
+    missing key fails here with a clear diff instead of surfacing as a frontend
+    ``TypeError`` on ``undefined`` three layers away.
+    """
+    test.assertEqual(set(body.keys()), set(schema_cls.model_fields.keys()), schema_cls.__name__)
+
+
+def make_member_user(username):
+    user = User.objects.create_user(username=username, password="secret")
+    member = Member.objects.create(
+        prename=username.title(),
+        lastname="Test",
+        birth_date=timezone.now().date(),
+        email=settings.TEST_MAIL,
+        gender=DIVERSE,
+    )
+    member.user = user
+    member.save()
+    return user, member
+
+
+def grant(user, *codenames):
+    for codename in codenames:
+        user.user_permissions.add(
+            Permission.objects.get(content_type__app_label="startpage", codename=codename)
+        )
+    return User.objects.get(pk=user.pk)
+
+
+class StartpagePublicReadApiTestCase(TestCase):
+    """The unauthenticated ``/public/*`` read surface."""
+
+    def setUp(self):
+        self.recent = Section.objects.create(title="Aktuelles", urlname=settings.RECENT_SECTION)
+        self.reports = Section.objects.create(title="Berichte", urlname=settings.REPORTS_SECTION)
+        self.root = Section.objects.create(title="Verein", urlname=settings.ROOT_SECTION)
+        self.recent_post = Post.objects.create(
+            title="Neue Tour",
+            urlname="neue-tour",
+            section=self.recent,
+            website_text="Wir waren unterwegs.",
+            date=datetime.date(2026, 1, 1),
+        )
+        self.report_post = Post.objects.create(
+            title="Rückblick",
+            urlname="rueckblick",
+            section=self.reports,
+            website_text="Ein schöner Bericht.",
+            date=datetime.date(2026, 2, 1),
+        )
+        self.visible_group = Group.objects.create(
+            name="Alpenfuechse", year_from=2010, year_to=2015, show_website=True
+        )
+        self.hidden_group = Group.objects.create(
+            name="Geheim", year_from=2000, year_to=2005, show_website=False
+        )
+        self.leiter_user, self.leiter = make_member_user("leiter")
+        self.visible_group.leiters.add(self.leiter)
+
+    # --- no authentication required ---------------------------------------
+
+    def test_public_endpoint_needs_no_auth(self):
+        r = self.client.get("/api/startpage/public/navigation")
+        self.assertEqual(r.status_code, 200)
+
+    # --- site identity ----------------------------------------------------
+
+    def test_public_site_reports_the_configured_section(self):
+        r = self.client.get("/api/startpage/public/site")
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertEqual(body["name"], settings.SEKTION)
+        self.assertEqual(body["display_name"], f"JDAV {settings.SEKTION}")
+        self.assertEqual(body["street"], settings.SEKTION_STREET)
+        self.assertEqual(body["town"], settings.SEKTION_TOWN)
+        self.assertEqual(body["telephone"], settings.SEKTION_TELEPHONE)
+        self.assertEqual(body["contact_mail"], settings.SEKTION_CONTACT_MAIL)
+        self.assertEqual(body["responsible_mail"], settings.RESPONSIBLE_MAIL)
+        # Nothing the imprint does not print: the endpoint is unauthenticated.
+        self.assertNotIn("telefax", body)
+        self.assertNotIn("board_mail", body)
+
+    def test_public_site_matches_schema(self):
+        body = self.client.get("/api/startpage/public/site").json()
+        assert_matches_schema(self, schemas.PublicSiteOut, body)
+
+    @override_settings(
+        SEKTION="Musterstadt",
+        SEKTION_DAV="Schwaben",
+        SEKTION_LATITUDE=48.8974,
+        SEKTION_LONGITUDE=9.1916,
+    )
+    def test_public_site_follows_the_deployment_configuration(self):
+        """Nothing here is this section's: another deployment gets its own name."""
+        body = self.client.get("/api/startpage/public/site").json()
+        self.assertEqual(body["name"], "Musterstadt")
+        self.assertEqual(body["display_name"], "JDAV Musterstadt")
+        self.assertEqual(body["dav_section"], "Schwaben")
+        self.assertEqual(body["latitude"], 48.8974)
+        self.assertEqual(body["longitude"], 9.1916)
+
+    @override_settings(SEKTION_LATITUDE=None, SEKTION_LONGITUDE=None)
+    def test_public_site_omits_unconfigured_coordinates(self):
+        """A deployment that set no position gets no coordinate readout."""
+        body = self.client.get("/api/startpage/public/site").json()
+        self.assertIsNone(body["latitude"])
+        self.assertIsNone(body["longitude"])
+
+    # --- navigation -------------------------------------------------------
+
+    def test_public_navigation(self):
+        r = self.client.get("/api/startpage/public/navigation")
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertIn(self.recent.pk, {s["id"] for s in body["sections"]})
+        group_ids = {g["id"] for g in body["groups"]}
+        self.assertIn(self.visible_group.pk, group_ids)
+        self.assertNotIn(self.hidden_group.pk, group_ids)
+        self.assertEqual(body["root_section"]["urlname"], settings.ROOT_SECTION)
+
+    def test_public_navigation_matches_schema(self):
+        body = self.client.get("/api/startpage/public/navigation").json()
+        assert_matches_schema(self, schemas.NavigationOut, body)
+        for group in body["groups"]:
+            assert_matches_schema(self, schemas.PublicGroupBrief, group)
+        for section in body["sections"]:
+            assert_matches_schema(self, schemas.SectionBrief, section)
+        assert_matches_schema(self, schemas.SectionOut, body["root_section"])
+
+    # --- index ------------------------------------------------------------
+
+    def test_public_index(self):
+        r = self.client.get("/api/startpage/public/index")
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertEqual({p["id"] for p in body["recent_posts"]}, {self.recent_post.pk})
+        self.assertEqual({p["id"] for p in body["reports"]}, {self.report_post.pk})
+        self.assertEqual(body["recent_posts"][0]["website_text"], "Wir waren unterwegs.")
+
+    def test_public_index_matches_schema(self):
+        body = self.client.get("/api/startpage/public/index").json()
+        assert_matches_schema(self, schemas.IndexOut, body)
+        for post in [*body["recent_posts"], *body["reports"]]:
+            assert_matches_schema(self, schemas.PublicPostBrief, post)
+
+    def test_public_index_is_bounded(self):
+        """The landing page leads with one story and lists a few; the full
+        archives live behind /aktuelles and /berichte. It used to return every
+        post, so the page grew without limit as the section published."""
+        for i in range(9):
+            Post.objects.create(
+                title=f"Extra {i}",
+                urlname=f"extra-{i}",
+                section=self.recent,
+                date=datetime.date(2026, 1, 1) + datetime.timedelta(days=i),
+                website_text="x",
+            )
+        r = self.client.get("/api/startpage/public/index")
+        self.assertEqual(r.status_code, 200)
+        self.assertLessEqual(len(r.json()["recent_posts"]), 5)
+
+    def test_public_post_carries_its_lead_image(self):
+        """Posts have always had images; no public schema exposed them, so the
+        whole public site rendered text-only."""
+        Image.objects.create(
+            post=self.recent_post,
+            f=SimpleUploadedFile("berg.jpg", b"\xff\xd8\xff", content_type="image/jpeg"),
+        )
+        r = self.client.get("/api/startpage/public/index")
+        self.assertEqual(r.status_code, 200)
+        post = next(p for p in r.json()["recent_posts"] if p["id"] == self.recent_post.pk)
+        self.assertIn("berg", post["image"])
+
+    def test_public_post_without_an_image_reports_none(self):
+        r = self.client.get("/api/startpage/public/index")
+        post = next(p for p in r.json()["reports"] if p["id"] == self.report_post.pk)
+        self.assertIsNone(post["image"])
+
+    # --- aktuelles / berichte ---------------------------------------------
+
+    def test_public_aktuelles(self):
+        r = self.client.get("/api/startpage/public/aktuelles")
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertEqual(body["section"]["urlname"], settings.RECENT_SECTION)
+        self.assertEqual({p["id"] for p in body["posts"]}, {self.recent_post.pk})
+
+    def test_public_berichte(self):
+        r = self.client.get("/api/startpage/public/berichte")
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertEqual(body["section"]["urlname"], settings.REPORTS_SECTION)
+        self.assertEqual({p["id"] for p in body["posts"]}, {self.report_post.pk})
+
+    def test_public_aktuelles_matches_schema(self):
+        body = self.client.get("/api/startpage/public/aktuelles").json()
+        assert_matches_schema(self, schemas.SectionPostsOut, body)
+        assert_matches_schema(self, schemas.SectionOut, body["section"])
+        for post in body["posts"]:
+            assert_matches_schema(self, schemas.PublicPostBrief, post)
+
+    def test_public_aktuelles_missing_section_404(self):
+        Section.objects.filter(urlname=settings.RECENT_SECTION).delete()
+        r = self.client.get("/api/startpage/public/aktuelles")
+        self.assertEqual(r.status_code, 404)
+
+    # --- faqs -------------------------------------------------------------
+
+    def test_public_faqs(self):
+        FAQ.objects.create(question="Wann?", answer="Montags.")
+        r = self.client.get("/api/startpage/public/faqs")
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertEqual(len(body), 1)
+        self.assertEqual(body[0]["answer"], "Montags.")
+        assert_matches_schema(self, schemas.FAQOut, body[0])
+
+    # --- groups -----------------------------------------------------------
+
+    def test_public_groups_lists_only_visible(self):
+        r = self.client.get("/api/startpage/public/groups")
+        self.assertEqual(r.status_code, 200)
+        ids = {g["id"] for g in r.json()}
+        self.assertEqual(ids, {self.visible_group.pk})
+        for group in r.json():
+            assert_matches_schema(self, schemas.PublicGroupBrief, group)
+
+    def test_public_group_detail(self):
+        r = self.client.get("/api/startpage/public/groups/{}".format(self.visible_group.name))
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertEqual(body["name"], "Alpenfuechse")
+        self.assertEqual({p["id"] for p in body["people"]}, {self.leiter.pk})
+
+    def test_public_group_detail_matches_schema(self):
+        """Regression for taxis #506: ``PublicMemberBrief`` declares ``prename``
+        and ``lastname`` required, so a real leader in ``people`` must carry
+        both — not just ``name`` — or a frontend trusting the generated type
+        crashes on ``undefined``."""
+        r = self.client.get("/api/startpage/public/groups/{}".format(self.visible_group.name))
+        body = r.json()
+        assert_matches_schema(self, schemas.PublicGroupDetail, body)
+        self.assertTrue(body["people"])
+        for person in body["people"]:
+            assert_matches_schema(self, schemas.PublicMemberBrief, person)
+            self.assertIsInstance(person["prename"], str)
+            self.assertIsInstance(person["lastname"], str)
+
+    def test_public_group_detail_exposes_registration_flag(self):
+        # The SPA gates the registration link on this flag, the way
+        # ``startpage/gruppen/detail.html`` does.
+        self.visible_group.show_website_registration = True
+        self.visible_group.save()
+        r = self.client.get("/api/startpage/public/groups/{}".format(self.visible_group.name))
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.json()["show_website_registration"])
+
+    def test_public_group_detail_with_weekday(self):
+        # Regression: a group with a weekday set previously returned 500 because
+        # the gettext_lazy weekday label reached pydantic as a proxy, not a str.
+        group = Group.objects.create(
+            name="Dienstagsgruppe",
+            year_from=2010,
+            year_to=2015,
+            show_website=True,
+            weekday=1,
+            start_time=datetime.time(18, 0),
+            end_time=datetime.time(20, 0),
+        )
+        r = self.client.get("/api/startpage/public/groups/{}".format(group.name))
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertTrue(body["weekday_display"])
+        self.assertIsInstance(body["weekday_display"], str)
+
+    def test_public_group_detail_hidden_404(self):
+        r = self.client.get("/api/startpage/public/groups/{}".format(self.hidden_group.name))
+        self.assertEqual(r.status_code, 404)
+
+    def test_public_group_detail_unknown_404(self):
+        r = self.client.get("/api/startpage/public/groups/DoesNotExist")
+        self.assertEqual(r.status_code, 404)
+
+    # --- sections ---------------------------------------------------------
+
+    def test_public_sections(self):
+        r = self.client.get("/api/startpage/public/sections")
+        self.assertEqual(r.status_code, 200)
+        ids = {s["id"] for s in r.json()}
+        self.assertTrue({self.recent.pk, self.reports.pk, self.root.pk} <= ids)
+        for section in r.json():
+            assert_matches_schema(self, schemas.SectionBrief, section)
+
+    def test_public_section_detail(self):
+        self.root.website_text = "Über uns."
+        self.root.save()
+        r = self.client.get("/api/startpage/public/sections/{}".format(settings.ROOT_SECTION))
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["website_text"], "Über uns.")
+        assert_matches_schema(self, schemas.SectionOut, r.json())
+
+    def test_public_section_detail_unknown_404(self):
+        r = self.client.get("/api/startpage/public/sections/nope-nope")
+        self.assertEqual(r.status_code, 404)
+
+    # --- post detail ------------------------------------------------------
+
+    def test_public_post_detail(self):
+        self.recent_post.groups.add(self.visible_group)
+        member_user, member = make_member_user("teilnehmer")
+        member.group.add(self.visible_group)
+        mop = MemberOnPost.objects.create(
+            post=self.recent_post, description="Gipfelfoto", tag="gipfel"
+        )
+        mop.members.add(member)
+
+        r = self.client.get(
+            "/api/startpage/public/sections/{}/posts/{}".format(
+                settings.RECENT_SECTION, self.recent_post.urlname
+            )
+        )
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertEqual(body["title"], "Neue Tour")
+        self.assertEqual(body["section"]["urlname"], settings.RECENT_SECTION)
+        self.assertEqual({p["id"] for p in body["people"]}, {member.pk})
+        self.assertEqual(len(body["people_on_post"]), 1)
+        self.assertEqual(body["people_on_post"][0]["tag"], "gipfel")
+        self.assertEqual({m["id"] for m in body["people_on_post"][0]["members"]}, {member.pk})
+
+    def test_public_post_detail_matches_schema(self):
+        self.recent_post.groups.add(self.visible_group)
+        _, member = make_member_user("teilnehmer2")
+        member.group.add(self.visible_group)
+        mop = MemberOnPost.objects.create(post=self.recent_post, description="Gipfelfoto")
+        mop.members.add(member)
+
+        r = self.client.get(
+            "/api/startpage/public/sections/{}/posts/{}".format(
+                settings.RECENT_SECTION, self.recent_post.urlname
+            )
+        )
+        body = r.json()
+        assert_matches_schema(self, schemas.PublicPostDetail, body)
+        assert_matches_schema(self, schemas.SectionBrief, body["section"])
+        self.assertTrue(body["people"])
+        for person in body["people"]:
+            assert_matches_schema(self, schemas.PublicMemberBrief, person)
+        for mop_body in body["people_on_post"]:
+            assert_matches_schema(self, schemas.PublicMemberOnPost, mop_body)
+            for person in mop_body["members"]:
+                assert_matches_schema(self, schemas.PublicMemberBrief, person)
+
+    def test_public_post_detail_unknown_404(self):
+        r = self.client.get(
+            "/api/startpage/public/sections/{}/posts/missing".format(settings.RECENT_SECTION)
+        )
+        self.assertEqual(r.status_code, 404)
+
+
+class StartpageWriteHardeningTestCase(TestCase):
+    """``full_clean`` on the authenticated create/update endpoints (HTTP 422)."""
+
+    def setUp(self):
+        self.application = Application.objects.create(
+            name="test-client",
+            client_type=Application.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=Application.GRANT_PASSWORD,
+            client_secret="test-secret",
+        )
+        self.editor_user, _ = make_member_user("editor")
+        self.editor_user = grant(
+            self.editor_user,
+            "add_section",
+            "change_section",
+            "add_post",
+            "add_link",
+        )
+        self.section = Section.objects.create(title="Aktuelles", urlname="aktuelles")
+
+    def auth(self, user):
+        token = AccessToken.objects.create(
+            user=user,
+            application=self.application,
+            token="tok-{}-{}".format(user.username, uuid.uuid4().hex[:8]),
+            expires=timezone.now() + datetime.timedelta(days=1),
+            scope="read write",
+        )
+        return {"HTTP_AUTHORIZATION": "Bearer {}".format(token.token)}
+
+    def test_create_section_rejects_duplicate_urlname(self):
+        r = self.client.post(
+            "/api/startpage/sections",
+            data={"title": "Zweitens", "urlname": "aktuelles"},
+            content_type="application/json",
+            **self.auth(self.editor_user),
+        )
+        self.assertEqual(r.status_code, 422)
+        self.assertEqual(Section.objects.filter(urlname="aktuelles").count(), 1)
+
+    def test_create_link_rejects_invalid_url(self):
+        r = self.client.post(
+            "/api/startpage/links",
+            data={"title": "Kaputt", "url": "not a url"},
+            content_type="application/json",
+            **self.auth(self.editor_user),
+        )
+        self.assertEqual(r.status_code, 422)
+
+    def test_create_post_rejects_missing_section(self):
+        r = self.client.post(
+            "/api/startpage/posts",
+            data={"title": "Tour", "urlname": "tour"},
+            content_type="application/json",
+            **self.auth(self.editor_user),
+        )
+        self.assertEqual(r.status_code, 422)
+        self.assertFalse(Post.objects.filter(urlname="tour").exists())
+
+    def test_update_section_keeps_own_urlname(self):
+        r = self.client.put(
+            "/api/startpage/sections/{}".format(self.section.pk),
+            data={"title": "Neu", "urlname": "aktuelles"},
+            content_type="application/json",
+            **self.auth(self.editor_user),
+        )
+        self.assertEqual(r.status_code, 200)
+        self.section.refresh_from_db()
+        self.assertEqual(self.section.title, "Neu")

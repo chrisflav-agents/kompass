@@ -162,6 +162,64 @@ class StatementUnSubmittedAdminTestCase(AdminTestCase):
         ) % {"name": str(self.statement)}
         self.assertContains(response, text)
 
+    def test_response_add_save_and_submit(self):
+        """Test that _saveandsubmit on add redirects to the submit view"""
+        request = self.factory.post("/", data={"_saveandsubmit": ""})
+        request.user = self.superuser
+        response = self.admin.response_add(request, self.statement)
+        self.assertEqual(response.status_code, HTTPStatus.FOUND)
+        self.assertIn(
+            reverse("admin:finance_statement_submit", args=(self.statement.pk,)),
+            response["Location"],
+        )
+
+    def test_response_add_regular_save(self):
+        """Test that a regular add falls through to the default response_add"""
+        statement = Statement.objects.create(
+            short_description="Plain Statement", explanation="Test", night_cost=0
+        )
+        request = self.factory.post("/", data={"_save": ""})
+        request.user = self.superuser
+        middleware = SessionMiddleware(lambda req: None)
+        middleware.process_request(request)
+        request.session.save()
+        middleware = MessageMiddleware(lambda req: None)
+        middleware.process_request(request)
+        request._messages = FallbackStorage(request)
+        response = self.admin.response_add(request, statement)
+        self.assertEqual(response.status_code, HTTPStatus.FOUND)
+
+    def test_change_view_nonexistent_object(self):
+        """Test change_view sets show_draft_notice=False for nonexistent objects"""
+        url = reverse("admin:finance_statement_change", args=(99999,))
+        c = self._login("superuser")
+        response = c.get(url, follow=True)
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+
+    def test_response_change_save_and_submit(self):
+        """Test that _saveandsubmit redirects to the submit view"""
+        request = self.factory.post("/", data={"_saveandsubmit": ""})
+        request.user = self.superuser
+        response = self.admin.response_change(request, self.statement)
+        self.assertEqual(response.status_code, HTTPStatus.FOUND)
+        self.assertIn(
+            reverse("admin:finance_statement_submit", args=(self.statement.pk,)),
+            response["Location"],
+        )
+
+    def test_response_change_regular_save(self):
+        """Test that a regular save falls through to the default response_change"""
+        request = self.factory.post("/", data={"_save": ""})
+        request.user = self.superuser
+        middleware = SessionMiddleware(lambda req: None)
+        middleware.process_request(request)
+        request.session.save()
+        middleware = MessageMiddleware(lambda req: None)
+        middleware.process_request(request)
+        request._messages = FallbackStorage(request)
+        response = self.admin.response_change(request, self.statement)
+        self.assertEqual(response.status_code, HTTPStatus.FOUND)
+
 
 class StatementSubmittedAdminTestCase(AdminTestCase):
     """Test cases for StatementAdmin in the case of submitted statements"""
@@ -611,7 +669,7 @@ class StatementConfirmedAdminTestCase(AdminTestCase):
         self.assertFalse(self.unconfirmed_statement.confirmed)
 
         # Call unconfirm_view - this should go through error path
-        response = self.admin.unconfirm_view(request, self.unconfirmed_statement.pk)
+        response = self.admin.unconfirm_view(request, self.unconfirmed_statement)
 
         # Should redirect due to not confirmed error
         self.assertEqual(response.status_code, 302)
@@ -629,7 +687,7 @@ class StatementConfirmedAdminTestCase(AdminTestCase):
         self.assertIsNotNone(self.statement.confirmed_date)
 
         # Call unconfirm_view - this should execute the unconfirm action
-        response = self.admin.unconfirm_view(request, self.statement.pk)
+        response = self.admin.unconfirm_view(request, self.statement)
 
         # Should redirect after successful unconfirm
         self.assertEqual(response.status_code, 302)
@@ -650,7 +708,7 @@ class StatementConfirmedAdminTestCase(AdminTestCase):
         self.assertTrue(self.statement.confirmed)
 
         # Call unconfirm_view
-        response = self.admin.unconfirm_view(request, self.statement.pk)
+        response = self.admin.unconfirm_view(request, self.statement)
 
         # Should render template (status 200)
         self.assertEqual(response.status_code, 200)
