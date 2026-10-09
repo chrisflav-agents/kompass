@@ -24,13 +24,53 @@ from django.urls import re_path
 from django.utils.translation import gettext_lazy as _
 from django.views.generic.base import RedirectView
 from oauth2_provider import urls as oauth2_urls
+from oauth2_provider import views as oauth2_views
 
+from .api import api
+from .views import BuiltinLoginView
 from .views import media_access
 
 admin.site.index_title = _("Startpage")
 admin.site.site_header = "Kompass"
 
 urlpatterns = []
+
+# The REST API is mounted outside i18n_patterns and before the startpage
+# catch-all, so it is shadowed by neither a language prefix (a locale redirect
+# would turn a POST into a GET) nor the "^" include.
+urlpatterns += [
+    path("api/", api.urls),
+]
+
+# The sign-in page `/o/authorize/` sends an anonymous visitor to where there is
+# no identity provider; `BuiltinLoginView` answers 404 where there is one. Kept
+# outside i18n_patterns, because the frontend reaches it through its own domain,
+# where a locale redirect would land on that app's router instead of here.
+urlpatterns += [
+    path("accounts/login/", BuiltinLoginView.as_view(), name="login"),
+]
+
+# The back-channel OAuth2 endpoints, reachable without a language prefix.
+#
+# `/o/` itself stays inside i18n_patterns (see below), so a request without a
+# prefix is answered with a redirect to `/de/o/...`. That is harmless for the
+# interactive GET views, but these three are POST-only: per the Fetch standard
+# a 302 turns a POST into a GET and drops the body, so the SPA's code-for-token
+# exchange arrived as a bodiless GET and came back 405. Production hides this
+# behind an nginx rewrite on the frontend domain; nothing rewrites in local
+# development, which left the SPA unable to finish a login at all.
+#
+# Registered without a name, so `reverse()` -- and with it the OIDC issuer and
+# the discovery document -- keeps resolving to the prefixed URLs below.
+#
+# `device-authorization`, `userinfo` and `logout` take a POST too and are left
+# out on purpose: nothing here uses the device flow, and the SPA deliberately
+# asks for no `openid` scope, so it never calls the other two.
+urlpatterns += [
+    path("o/token/", oauth2_views.TokenView.as_view()),
+    path("o/revoke_token/", oauth2_views.RevokeTokenView.as_view()),
+    path("o/introspect/", oauth2_views.IntrospectTokenView.as_view()),
+]
 
 if settings.OIDC_ENABLED:
     admin.site.login = staff_member_required(admin.site.login, login_url=settings.LOGIN_URL)
@@ -51,6 +91,11 @@ urlpatterns += i18n_patterns(
         include("ludwigsburgalpin.urls", namespace="ludwigsburgalpin"),
     ),
     re_path(r"^_nested_admin/", include("nested_admin.urls")),
+    # Stays inside i18n_patterns, where it has always been: every registered
+    # OAuth2 client is configured with the language-prefixed URL, and the OIDC
+    # issuer is derived from `reverse()`, so moving it would move the `iss`
+    # claim and the discovery document with it. The frontend reaches it on its
+    # own domain, whose nginx rewrites `/o/` onto the prefix for that host only.
     path("o/", include(oauth2_urls)),
     re_path(r"^", include("startpage.urls", namespace="startpage")),
 )
