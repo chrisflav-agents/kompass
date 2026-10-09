@@ -33,6 +33,19 @@ class Group(models.Model):
         blank=True,
         on_delete=models.SET_NULL,
     )
+    show_website_year = models.BooleanField(
+        verbose_name=_("show year range on website"), default=False
+    )
+    show_website_weekday = models.BooleanField(
+        verbose_name=_("show weekday on website"), default=False
+    )
+    show_website_time = models.BooleanField(verbose_name=_("show time on website"), default=False)
+    show_website_contact_email = models.BooleanField(
+        verbose_name=_("show contact email on website"), default=False
+    )
+    show_website_registration = models.BooleanField(
+        verbose_name=_("show registration link on website"), default=False
+    )
 
     def __str__(self):
         """String representation"""
@@ -61,8 +74,28 @@ class Group(models.Model):
         else:
             return ""
 
+    def get_weekday_display_info(self):
+        if self.weekday is not None:
+            # str() forces the gettext_lazy proxy to a real string; pydantic
+            # (used by the public API schema) rejects the bare proxy → HTTP 500.
+            return str(WEEKDAYS[self.weekday][1])
+        return ""
+
+    def get_time_slot_info(self):
+        if self.start_time and self.end_time:
+            return "{} – {}".format(
+                self.start_time.strftime("%H:%M"),
+                self.end_time.strftime("%H:%M"),
+            )
+        return ""
+
     def has_age_info(self):
         return self.year_from and self.year_to
+
+    def has_registration_password(self):
+        from .registration import RegistrationPassword
+
+        return RegistrationPassword.objects.filter(group=self).exists()
 
     def get_age_info(self):
         if self.has_age_info():
