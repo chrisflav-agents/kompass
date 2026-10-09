@@ -20,7 +20,8 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from mailer.mailutils import prepend_base_url
 from mailer.mailutils import send as send_mail
-from members.pdf import render_tex
+from mailer.mailutils import SENT
+from members.pdf import generate_crisis_intervention_list_pdf
 from members.rules import is_leader
 from utils import coming_midnight
 from utils import cvt_to_decimal
@@ -41,7 +42,13 @@ class Freizeit(CommonModel):
 
     name = models.CharField(verbose_name=_("Activity"), default="", max_length=50)
     place = models.CharField(verbose_name=_("Place"), default="", max_length=50)
-    postcode = models.CharField(verbose_name=_("Postcode"), default="", max_length=30)
+    postcode = models.CharField(
+        verbose_name=_("Postcode"),
+        default="",
+        max_length=30,
+        blank=True,
+        help_text=_("only relevant for a LJP application"),
+    )
     destination = models.CharField(
         verbose_name=_("Destination (optional)"),
         default="",
@@ -80,7 +87,12 @@ class Freizeit(CommonModel):
         verbose_name=_("Means of transportation"),
     )
     kilometers_traveled = models.IntegerField(
-        verbose_name=_("Kilometers traveled"), validators=[MinValueValidator(0)]
+        verbose_name=_("Kilometers traveled"),
+        validators=[MinValueValidator(0)],
+        default=0,
+        help_text=_(
+            "The total kilometers traveled (away and back) during this excursion. This is relevant for the section subsidies."
+        ),
     )
     activity = models.ManyToManyField(ActivityCategory, default=None, verbose_name=_("Categories"))
     difficulty_choices = [(1, _("easy")), (2, _("medium")), (3, _("hard"))]
@@ -298,10 +310,16 @@ class Freizeit(CommonModel):
         jls = set(self.jugendleiter.distinct())
         # non-youth leader participants
         ps_only = ps - jls
-        # participants of the correct age
-        ps_correct_age = {
-            m for m in ps_only if m.age_at(self.date) >= 6 and m.age_at(self.date) < 27
-        }
+        # participants of the correct age (age does not matter for excursions with goal qualification)
+        if (
+            hasattr(self, "ljpproposal")
+            and self.ljpproposal.goal == self.ljpproposal.LJP_QUALIFICATION
+        ):
+            ps_correct_age = ps_only
+        else:
+            ps_correct_age = {
+                m for m in ps_only if m.age_at(self.date) >= 6 and m.age_at(self.date) < 27
+            }
         # m = the official non-youth-leader participant count
         # and, assuming there exist enough participants, unrounded m satisfies the equation
         # len(ps_correct_age) + 1/5 * m = m
@@ -561,25 +579,45 @@ class Freizeit(CommonModel):
     def filter_queryset_by_change_permissions_member(cls, member, queryset):
         return Freizeit.filter_queryset_by_permissions(member, queryset)
 
+    def crisis_intervention_list_pdf(self, save_only=False):
+        """
+        Render the crisis intervention list PDF for this excursion.
+
+        Shared by the admin download button and the automatic nightly send so
+        both always render from the same context.
+        """
+        return generate_crisis_intervention_list_pdf(
+            name=self.name,
+            description=self.description,
+            code=self.code,
+            place=self.place,
+            destination=self.destination,
+            groups=self.groups.all(),
+            staff=self.jugendleiter.all(),
+            start_date=self.date,
+            end_date=self.end,
+            tour_type=self.get_tour_type_display(),
+            tour_approach=self.get_tour_approach_display(),
+            members=[mol.member for mol in self.membersonlist.all()],
+            filename_base=f"{self.code}_{self.name}",
+            save_only=save_only,
+        )
+
     def send_crisis_intervention_list(self, sending_time=None):
         """
         Send the crisis intervention list to the crisis invervention email, the
         responsible and the youth leaders of this excursion.
+
+        The excursion is only marked as sent once the mail has actually been
+        handed to the mail backend, so an undelivered list is raised to the
+        calling task instead of being recorded as sent.
         """
-        context = dict(memberlist=self, settings=settings)
-        start_date = timezone.localtime(self.date).strftime("%d.%m.%Y")
-        filename = render_tex(
-            f"{self.code}_{self.name}_Krisenliste",
-            "members/crisis_intervention_list.tex",
-            context,
-            date=self.date,
-            save_only=True,
-        )
+        filename = self.crisis_intervention_list_pdf(save_only=True)
         leaders = ", ".join([yl.name for yl in self.jugendleiter.all()])
         start_date = timezone.localtime(self.date).strftime("%d.%m.%Y")
         end_date = timezone.localtime(self.end).strftime("%d.%m.%Y")
         # create email with attachment
-        send_mail(
+        status = send_mail(
             _("Crisis intervention list for %(excursion)s from %(start)s to %(end)s")
             % {"excursion": self.name, "start": start_date, "end": end_date},
             settings.SEND_EXCURSION_CRISIS_LIST.format(
@@ -593,6 +631,10 @@ class Freizeit(CommonModel):
             cc=[settings.RESPONSIBLE_MAIL] + [yl.email for yl in self.jugendleiter.all()],
             attachments=[media_path(filename)],
         )
+        if status != SENT:
+            raise RuntimeError(
+                f"Could not send the crisis intervention list for excursion {self.code}."
+            )
         self.crisis_intervention_list_sent = True
         self.save()
 

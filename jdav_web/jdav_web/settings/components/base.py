@@ -17,6 +17,10 @@ ALLOWED_HOSTS = get_var("django", "allowed_hosts", default=["*"])
 HOST = get_var("django", "host", default="localhost:8000")
 PROTOCOL = get_var("django", "protocol", default="https")
 BASE_URL = get_var("django", "base_url", default=HOST)
+# Where the SPA is served, e.g. "https://kompass.example.org". When set, the
+# secret-key links in outgoing mail point at the SPA's own routes instead of the
+# pre-SPA Django views. Empty keeps the legacy behaviour.
+FRONTEND_BASE_URL = get_var("django", "frontend_base_url", default="")
 
 # Define media paths e.g. for image storage
 MEDIA_URL = "/media/"
@@ -39,6 +43,19 @@ FILE_UPLOAD_PERMISSIONS = 0o644
 
 USE_X_FORWARDED_HOST = True
 
+# TLS is terminated by the reverse proxy in front of nginx, so Django sees a
+# plain HTTP request and would judge an `https://` Origin to be a mismatch.
+# Trusting the proxy's own header tells the two apart — but `SECURE_PROXY_SSL_HEADER`
+# would do so for *every* domain this process serves, including ones that have
+# always run without it, which silently tightens their CSRF Referer checking.
+# So the trust is named per host and applied by middleware instead.
+TRUST_FORWARDED_PROTO_HOSTS = list(get_var("django", "trust_forwarded_proto_hosts", default=[]))
+
+# Origins whose forms Django accepts POSTs from, as "https://host" entries. A
+# second frontend domain proxying `/o/` needs to be listed here: the OAuth login
+# form is served under that domain and posted back to it.
+CSRF_TRUSTED_ORIGINS = list(get_var("django", "csrf_trusted_origins", default=[]))
+
 # Application definition
 
 INSTALLED_APPS = [
@@ -51,6 +68,7 @@ INSTALLED_APPS = [
     "mailer.apps.MailerConfig",
     "finance.apps.FinanceConfig",
     "ludwigsburgalpin.apps.LudwigsburgalpinConfig",
+    "feedback.apps.FeedbackConfig",
     #'easy_select2',
     "markdownify.apps.MarkdownifyConfig",
     "markdownx",
@@ -73,6 +91,8 @@ MIDDLEWARE = [
     "django.middleware.cache.UpdateCacheMiddleware",
     "jdav_web.middleware.ForceLangMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    # Before CsrfViewMiddleware, which is what reads the resulting scheme.
+    "jdav_web.middleware.ForwardedProtoForHostsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.locale.LocaleMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -120,7 +140,18 @@ STATICFILES_DIRS = [
 # use python3 manage.py collectstatic to collect static files in the STATIC_ROOT
 # this is needed for deployment
 STATIC_ROOT = get_var("django", "static_root", default="/var/www/jdav_web/static")
-DEFAULT_STATIC_PATH = get_var("django", "default_static_path", default="/app/jdav_web/static")
+# Relative to the project, not to `/app`: the LaTeX templates interpolate this into an absolute
+# `\includegraphics` argument (members/templates/members/tex_base.tex), and `pdflatex` runs with
+# `-halt-on-error`, so a path that does not exist is a failed document rather than a missing
+# logo. `/app` is where the project's own images put the checkout and is right there; it is not
+# right anywhere else, which is every PDF test in an agent's container.
+#
+# BASE_DIR is this project directory — django-split-settings execs each component with the
+# parent module's globals, so `__file__` is settings/__init__.py and three dirnames up is
+# `<checkout>/jdav_web`. That makes this `/app/jdav_web/static` inside the images, unchanged.
+DEFAULT_STATIC_PATH = get_var(
+    "django", "default_static_path", default=os.path.join(BASE_DIR, "static")
+)
 
 # Locale files (translations)
 
