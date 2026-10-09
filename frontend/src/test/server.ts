@@ -5,6 +5,7 @@ import { API_BASE } from "../api/client";
 import type { Site } from "../api/site";
 import type { TerminChoice, TerminEnums } from "../api/terminEnums";
 import type { ActivityEnums, EnumChoice } from "../api/activityEnums";
+import type { MemberEnums } from "../api/memberEnums";
 
 /** Absolute URL for an API path, so handlers match what the client actually calls. */
 export const api = (path: string) => `${API_BASE}${path}`;
@@ -224,6 +225,20 @@ export const ACTIVITY_ENUMS: ActivityEnums = {
   ]),
 };
 
+/**
+ * The gender choices `/api/members/public/enums` serves. Mirrors
+ * `Member.gender_choices` (0/1/2) so `GenderSelect` renders without a mock in
+ * every test that opens one of the public flows.
+ */
+export const MEMBER_ENUMS: MemberEnums = {
+  // `gender` has no model default, so nothing in its list is marked.
+  gender: activityChoices([
+    [0, "Männlich"],
+    [1, "Weiblich"],
+    [2, "Divers"],
+  ]),
+};
+
 /** Handlers present in every test; individual tests override with `server.use`. */
 const baseHandlers = [
   http.get(api("/api/members/me"), () => HttpResponse.json(DEFAULT_ME)),
@@ -236,6 +251,9 @@ const baseHandlers = [
   // selects from these, so they belong here rather than in each test that
   // opens one.
   http.get(api("/api/members/activities/enums"), () => HttpResponse.json(ACTIVITY_ENUMS)),
+  // Every public flow's `GenderSelect` builds its options from this, so it
+  // belongs here rather than in each test that renders one.
+  http.get(api("/api/members/public/enums"), () => HttpResponse.json(MEMBER_ENUMS)),
 ];
 
 export const server = setupServer(...baseHandlers);
