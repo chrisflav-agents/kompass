@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-12-07 09:35+0100\n"
+"POT-Creation-Date: 2026-09-20 21:59+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -45,6 +45,37 @@ msgstr "Fehler beim Senden der Emails"
 msgid "Successfully sent message"
 msgstr "Email wurde erfolgreich verschickt"
 
+msgid "Reactivate forwarding to the selected addresses"
+msgstr "Weiterleitung an die ausgewählten Adressen reaktivieren"
+
+#, python-format
+msgid "Reactivated %(count)d addresses."
+msgstr "%(count)d Adressen reaktiviert."
+
+msgid "Can't verify this link. Try again!"
+msgstr "Ungültiger Link. Bitte nochmal versuchen!"
+
+msgid "Either a group or at least one member is required as forward recipient."
+msgstr ""
+"Es muss entweder eine Gruppe oder mindestens ein*e Teilnehmer*in als "
+"Empfänger*in ausgewählt werden."
+
+msgid ""
+"Either a group, a memberlist or at least one member is required as recipient"
+msgstr ""
+"Es muss entweder eine Gruppe, eine Teilnehmer*innenliste oder mindestens "
+"ein*e Teilnehmer*in als Empfänger*in ausgewählt werden."
+
+msgid "A sent message can no longer be edited."
+msgstr "Eine bereits versendete Nachricht kann nicht mehr bearbeitet werden."
+
+msgid ""
+"Your email address is not an internal email address and may not send "
+"messages."
+msgstr ""
+"Deine E-Mail Adresse ist keine interne E-Mail Adresse und darf keine "
+"Nachrichten versenden."
+
 msgid "mailer"
 msgstr "Verteiler"
 
@@ -67,13 +98,12 @@ msgstr "Weiterleitung an Gruppe"
 msgid "Restrict to internal email addresses"
 msgstr "Weiterleitung nur von internen E-Mail Adressen erlaubt"
 
-#, python-format
 msgid ""
-"Only allow forwarding to this e-mail address from one of the following "
-"domains: %(domains)s."
+"Only allow forwarding to this e-mail address from one of the internal "
+"domains."
 msgstr ""
-"Leite nur E-Mails weiter, die von einer der folgenden Domains verschickt "
-"wurden: %(domains)s."
+"Leite nur E-Mails weiter, die von einer der internen Domains verschickt "
+"wurden."
 
 msgid "Allowed sender"
 msgstr "Erlaubte Absender:innen"
@@ -91,10 +121,13 @@ msgstr "Email-Adresse"
 msgid "email addresses"
 msgstr "Email-Adressen"
 
-msgid "Either a group or at least one member is required as forward recipient."
+#, python-format
+msgid ""
+"Only allow forwarding to this e-mail address from one of the following "
+"domains: %(domains)s."
 msgstr ""
-"Es muss entweder eine Gruppe oder mindestens ein*e Teilnehmer*in als "
-"Empfänger*in ausgewählt werden."
+"Leite nur E-Mails weiter, die von einer der folgenden Domains verschickt "
+"wurden: %(domains)s."
 
 msgid "subject"
 msgstr "Betreff"
@@ -141,12 +174,6 @@ msgstr "Nachrichten"
 msgid "Can submit mails"
 msgstr "Kann Mails verschicken"
 
-msgid ""
-"Either a group, a memberlist or at least one member is required as recipient"
-msgstr ""
-"Es muss entweder eine Gruppe, eine Teilnehmer*innenliste oder mindestens "
-"ein*e Teilnehmer*in als Empfänger*in ausgewählt werden."
-
 msgid "file"
 msgstr "Datei"
 
@@ -158,6 +185,68 @@ msgstr "Anhang"
 
 msgid "attachments"
 msgstr "Anhänge"
+
+msgid "email"
+msgstr "E-Mail-Adresse"
+
+msgid "hard bounces"
+msgstr "Dauerhafte Zustellfehler"
+
+msgid "soft bounces"
+msgstr "Vorübergehende Zustellfehler"
+
+msgid "last bounce"
+msgstr "Letzter Zustellfehler"
+
+msgid "last status"
+msgstr "Letzter Status"
+
+msgid "last bounce detail"
+msgstr "Details zum letzten Zustellfehler"
+
+msgid "suspended"
+msgstr "Deaktiviert"
+
+msgid "No mail is forwarded to this address until it is reactivated."
+msgstr ""
+"An diese Adresse werden keine E-Mails weitergeleitet, bis sie wieder "
+"aktiviert wird."
+
+msgid "mail delivery state"
+msgstr "Zustellstatus"
+
+msgid "mail delivery states"
+msgstr "Zustellstatus"
+
+msgid "token"
+msgstr "Token"
+
+msgid "message id"
+msgstr "Message-ID"
+
+msgid "local address"
+msgstr "Lokale Adresse"
+
+msgid "recipient"
+msgstr "Empfänger:in"
+
+msgid "envelope sender"
+msgstr "Envelope-Absender:in"
+
+msgid "created"
+msgstr "Erstellt"
+
+msgid "bounced"
+msgstr "Zustellfehler"
+
+msgid "bounce status"
+msgstr "Status des Zustellfehlers"
+
+msgid "delivery attempt"
+msgstr "Zustellversuch"
+
+msgid "delivery attempts"
+msgstr "Zustellversuche"
 
 msgid "Save and send mail"
 msgstr "Speichern und Email senden"
@@ -233,9 +322,6 @@ msgstr "Hier kannst du dich vom Newsletter abmelden"
 
 msgid "Successfully unsubscribed from the newsletter for "
 msgstr "Newsletter erfolgreich abbestellt für "
-
-msgid "Can't verify this link. Try again!"
-msgstr "Ungültiger Link. Bitte nochmal versuchen!"
 
 msgid "Please fill in every field"
 msgstr "Bitte jedes Feld ausfüllen!"
