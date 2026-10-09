@@ -218,6 +218,9 @@ Dort kannst du deine Daten nach Eingabe eines Passworts überprüfen und ggf. ä
 Passwort ist dein Geburtsdatum. Wäre dein Geburtsdatum zum Beispiel der 4. Januar 1942,
 so wäre dein Passwort: 04.01.1942
 
+Halte bitte deinen DAV Mitgliedsausweis bereit, denn die Angabe deiner DAV Mitgliedsnummer
+ist für die Rückmeldung verpflichtend.
+
 Falls du nicht innerhalb von 30 Tagen deine Daten bestätigst, gehen wir davon aus, dass du nicht mehr Teil
 unserer Jugendarbeit sein möchtest. Dein Platz wird dann weitervergeben, deine Daten aus unserer Datenbank
 gelöscht und du erhälst in Zukunft keine Mails mehr von uns.
@@ -268,6 +271,22 @@ du bist Jugendleiter*in in der Sektion {SEKTION}. Die Verwaltung unserer Jugendg
 Ausfahrten und Finanzen erfolgt in unserer Online Plattform Kompass. Deine Stammdaten sind
 dort bereits hinterlegt. Damit du dich auch anmelden kannst, folge bitte dem folgenden Link
 und wähle ein Passwort.
+
+{{link}}
+
+Bei Fragen, wende dich gerne an {RESPONSIBLE_MAIL}.
+
+Viele Grüße
+Deine JDAV {SEKTION}""".format(SEKTION=SEKTION, RESPONSIBLE_MAIL=RESPONSIBLE_MAIL),
+)
+
+
+PASSWORD_RESET_TEXT = get_text(
+    "password_reset",
+    default="""Hallo {{name}},
+
+du hast eine Anfrage zum Zurücksetzen deines Passworts für Kompass erhalten. Folge bitte dem
+folgenden Link, um ein neues Passwort zu wählen.
 
 {{link}}
 

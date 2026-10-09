@@ -6,7 +6,7 @@ JET_SIDE_MENU_COMPACT = True
 JET_DEFAULT_THEME = "jdav-green"
 JET_CHANGE_FORM_SIBLING_LINKS = False
 
-JET_SIDE_MENU_ITEMS = [
+_JET_SIDE_MENU_ITEMS = [
     {
         "label": "Teilnehmer*innenverwaltung",
         "app_label": "members",
@@ -102,15 +102,11 @@ JET_SIDE_MENU_ITEMS = [
             {"name": "section", "permissions": ["startpage.view_section"]},
             {"name": "post", "permissions": ["startpage.view_post"]},
             {"name": "link", "permissions": ["startpage.view_link"]},
+            {"name": "faq", "permissions": ["startpage.view_faq"]},
         ],
     },
-    {
-        "label": "Externe Links",
-        "items": [
-            {"label": "Nextcloud", "url": CLOUD_LINK, "url_blank": True},
-            {"label": "DAV 360", "url": DAV_360_LINK, "url_blank": True},
-            {"label": "Julei-Wiki", "url": WIKI_LINK, "url_blank": True},
-            {"label": "Kompass Dokumentation", "url": DOCS_LINK, "url_blank": True},
-        ],
-    },
+]
+
+JET_SIDE_MENU_ITEMS = [
+    item for item in _JET_SIDE_MENU_ITEMS if item.get("app_label") not in SIDEBAR_DISABLED_APPS
 ]

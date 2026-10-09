@@ -17,12 +17,14 @@ from django.utils.translation import gettext_lazy as _
 from members.models import DIVERSE
 from members.models import Group
 from members.models import Member
+from members.models import RegistrationPassword
 from startpage import urls
 from startpage.templatetags.markdown_extras import render_as_template
 from startpage.templatetags.markdown_extras import RenderAsTemplateNode
 from startpage.views import handler500
 from startpage.views import redirect
 
+from .models import FAQ
 from .models import Image
 from .models import Link
 from .models import Post
@@ -143,6 +145,10 @@ class ModelsTestCase(BasicTestCase):
         """Test Link.__str__ method"""
         self.assertEqual(str(self.test_link), "Test Link")
 
+    def test_faq_str(self):
+        faq = FAQ.objects.create(question="Was kostet die Halbjahreskarte?", answer="30 Euro.")
+        self.assertEqual(str(faq), "Was kostet die Halbjahreskarte?")
+
     def test_section_absolute_urlname_no_reverse_match(self):
         """Test Section.absolute_urlname when NoReverseMatch occurs"""
         section = Section.objects.get(urlname="orga")
@@ -209,6 +215,49 @@ class ViewTestCase(BasicTestCase):
         response = c.get(url)
         self.assertEqual(response.status_code, 200, "Response code is not 200 for group.")
 
+    def get_registration_group_response(self, name, show_registration, with_password):
+        """Create a group with the given registration settings and render its detail page.
+
+        Every group gets its own name, so that the responses are not served from
+        the cache of a previous request.
+        """
+        group = Group.objects.create(
+            name=name, show_website=True, show_website_registration=show_registration
+        )
+        if with_password:
+            RegistrationPassword.objects.create(group=group, password="pw-{}".format(group.pk))
+        return Client().get(reverse("startpage:gruppe_detail", args=(name,)))
+
+    def test_gruppen_registration_link_shown(self):
+        response = self.get_registration_group_response(
+            "RegistrationShown", show_registration=True, with_password=True
+        )
+        self.assertContains(
+            response,
+            reverse("members:register"),
+            msg_prefix="Registration link is missing although it is enabled for the group.",
+        )
+
+    def test_gruppen_registration_link_disabled(self):
+        response = self.get_registration_group_response(
+            "RegistrationDisabled", show_registration=False, with_password=True
+        )
+        self.assertNotContains(
+            response,
+            reverse("members:register"),
+            msg_prefix="Registration link is shown although it is disabled for the group.",
+        )
+
+    def test_gruppen_registration_link_without_password(self):
+        response = self.get_registration_group_response(
+            "RegistrationNoPassword", show_registration=True, with_password=False
+        )
+        self.assertNotContains(
+            response,
+            reverse("members:register"),
+            msg_prefix="Registration link is shown although the group has no password.",
+        )
+
     def test_gruppen_404(self):
         c = Client()
         url = reverse("startpage:gruppe_detail", args=("SuperClimbers",))
@@ -258,6 +307,22 @@ class ViewTestCase(BasicTestCase):
         request = RequestFactory().get("/")
         response = handler500(request)
         self.assertEqual(response.status_code, 500)
+
+    def test_faq_view(self):
+        c = Client()
+        url = reverse("startpage:faq")
+        response = c.get(url)
+        self.assertEqual(response.status_code, 200)
+
+
+class FAQWithEntriesViewTestCase(BasicTestCase):
+    def test_faq_view_with_entries(self):
+        FAQ.objects.create(question="Wie alt müssen Kinder sein?", answer="Ab 5 Jahren.")
+        c = Client()
+        url = reverse("startpage:faq")
+        response = c.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Wie alt müssen Kinder sein?")
 
 
 class MarkdownExtrasTestCase(TestCase):
