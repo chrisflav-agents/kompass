@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -864,6 +864,275 @@ describe("submission flow — Abschluss", () => {
   });
 });
 
+describe("submission flow — remaining branches", () => {
+  it("cancels back to the statement's own page", async () => {
+    flowReturns([]);
+    detailReturns();
+    const { user } = renderRoute("/kompass/finance/statements/1/edit?stage=purpose");
+    await user.click(await screen.findByRole("button", { name: "Abbrechen" }));
+    expect(await screen.findByRole("button", { name: "Weiter bearbeiten" })).toBeInTheDocument();
+  });
+
+  it("jumps between steps directly from the rail", async () => {
+    flowReturns([]);
+    detailReturns();
+    const { user } = renderRoute("/kompass/finance/statements/1/edit?stage=purpose");
+    await screen.findByRole("heading", { name: "Wofür ist diese Abrechnung?" });
+    await user.click(screen.getByRole("button", { name: /Belege/ }));
+    expect(await screen.findByRole("heading", { name: "Belege" })).toBeInTheDocument();
+  });
+
+  it("switches back to Für eine Fahrt after picking Sonstige Ausgabe", async () => {
+    flowReturns();
+    const { user } = renderRoute("/kompass/finance/statements/new");
+    await user.click(await screen.findByRole("radio", { name: /Sonstige Ausgabe/ }));
+    expect(screen.getByRole("radio", { name: /Sonstige Ausgabe/ })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    await user.click(screen.getByRole("radio", { name: /Für eine Fahrt/ }));
+    expect(screen.getByRole("radio", { name: /Für eine Fahrt/ })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(await screen.findByText("Fahrt auswählen…")).toBeInTheDocument();
+  });
+
+  it("falls back to purpose when the requested stage isn't valid for this statement's mode", async () => {
+    flowReturns([]);
+    detailReturns({ excursion: null, night_cost: null });
+    renderRoute("/kompass/finance/statements/1/edit?stage=reimbursement");
+    expect(
+      await screen.findByRole("heading", { name: "Wofür ist diese Abrechnung?" }),
+    ).toBeInTheDocument();
+  });
+
+  it("advances through steps for an existing statement without re-navigating", async () => {
+    flowReturns();
+    detailReturns();
+    server.use(
+      http.patch(api("/api/finance/statements/1"), () => HttpResponse.json(statement())),
+    );
+    const { user } = renderRoute("/kompass/finance/statements/1/edit?stage=purpose");
+    await screen.findByRole("heading", { name: "Wofür ist diese Abrechnung?" });
+    await user.click(screen.getByRole("button", { name: "Weiter" }));
+    expect(await screen.findByRole("heading", { name: "Belege" })).toBeInTheDocument();
+  });
+
+  it("auto-names a fresh description when arriving preset from a trip", async () => {
+    flowReturns();
+    renderRoute("/kompass/finance/statements/new?excursion=3");
+    await waitFor(() => expect(screen.getByDisplayValue("Skifreizeit")).toBeInTheDocument());
+  });
+
+  it("keeps a typed description instead of overwriting it with the trip's name", async () => {
+    let resolveDetail: (value: unknown) => void = () => {};
+    server.use(
+      http.get(api("/api/members/excursions"), () =>
+        HttpResponse.json([{ id: 3, code: "F26-01", name: "Skifreizeit" }]),
+      ),
+      http.get(
+        api("/api/members/excursions/3"),
+        () => new Promise((resolve) => {
+          resolveDetail = (value) => resolve(HttpResponse.json(value));
+        }),
+      ),
+      http.get(api("/api/members/"), () => HttpResponse.json([])),
+    );
+    const { user } = renderRoute("/kompass/finance/statements/new?excursion=3");
+    await user.type(screen.getByLabelText(/Kurzbeschreibung/), "Eigener Titel");
+    resolveDetail(EXCURSION_DETAIL);
+    await waitFor(() => expect(screen.getByDisplayValue("Eigener Titel")).toBeInTheDocument());
+  });
+
+  it("commits a cleared night cost as zero", async () => {
+    flowReturns();
+    detailReturns({ real_staff_count: 2, allowance_per_yl: 40 });
+    let patched: Record<string, unknown> | null = null;
+    server.use(
+      http.patch(api("/api/finance/statements/1"), async ({ request }) => {
+        patched = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(statement());
+      }),
+    );
+    const { user } = renderRoute("/kompass/finance/statements/1/edit?stage=reimbursement");
+    const input = await screen.findByLabelText(/^Preis pro Übernachtung/);
+    await user.clear(input);
+    await waitFor(() => expect(patched).not.toBeNull(), { timeout: 2000 });
+    expect(patched).toMatchObject({ night_cost: 0 });
+  });
+
+  it("adds a receipt with a payer and a proof image", async () => {
+    flowReturns();
+    detailReturns();
+    let fields: Record<string, string> | null = null;
+    server.use(
+      http.post(api("/api/finance/bills"), async ({ request }) => {
+        fields = await multipartFields(request);
+        return HttpResponse.json({ id: 14 });
+      }),
+    );
+    const { user } = renderRoute("/kompass/finance/statements/1/edit?stage=receipts");
+    await user.click(await screen.findByRole("button", { name: "+ Beleg hinzufügen" }));
+    await user.type(screen.getByLabelText("Wofür"), "Fähre");
+    await user.type(screen.getByLabelText("Betrag"), "30");
+    await user.click(screen.getByRole("button", { name: /^Ausgelegt von/ }));
+    await user.click(dropdown().getByRole("button", { name: "Hannah Beckers" }));
+    await user.upload(
+      screen.getByLabelText(/Beleg-Bild/),
+      new File(["x"], "beleg.jpg", { type: "image/jpeg" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Beleg hinzufügen" }));
+    await waitFor(() => expect(fields).not.toBeNull());
+    expect(fields).toMatchObject({ paid_by_id: "7", short_description: "Fähre", amount: "30" });
+  });
+
+  it("clears a bill's amount and payer while editing one with no prior scan", async () => {
+    flowReturns();
+    detailReturns({
+      bills: [
+        {
+          id: 15,
+          short_description: null,
+          explanation: null,
+          amount: 50,
+          costs_covered: false,
+          refunded: false,
+          statement_id: 1,
+          paid_by: null,
+          has_proof: false,
+          proof_url: null,
+        },
+      ],
+    });
+    let patched: Record<string, unknown> | null = null;
+    server.use(
+      http.patch(api("/api/finance/bills/15"), async ({ request }) => {
+        patched = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ id: 15 });
+      }),
+    );
+    const { user } = renderRoute("/kompass/finance/statements/1/edit?stage=receipts");
+    await user.click(await screen.findByRole("button", { name: "Bearbeiten" }));
+    const amount = screen.getByDisplayValue("50");
+    await user.clear(amount);
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => expect(patched).not.toBeNull());
+    expect(patched).toMatchObject({ amount: 0, paid_by_id: null });
+  });
+
+  it("shows field errors across the reimbursement step", async () => {
+    flowReturns();
+    detailReturns({ real_staff_count: 2, allowance_per_yl: 40 });
+    server.use(
+      http.patch(api("/api/finance/statements/1"), () =>
+        djangoValidation({
+          allowance_to: ["Zu viele Empfänger*innen."],
+          night_cost: ["Ungültiger Betrag."],
+        }),
+      ),
+    );
+    const { user } = renderRoute("/kompass/finance/statements/1/edit?stage=reimbursement");
+    await user.click(
+      await screen.findByRole("button", { name: /^Aufwandsentschädigung an/ }),
+    );
+    await user.click(dropdown().getByRole("button", { name: "Hannah Beckers" }));
+    expect(await screen.findByText("Zu viele Empfänger*innen.")).toBeInTheDocument();
+    expect(await screen.findByText("Ungültiger Betrag.")).toBeInTheDocument();
+  });
+
+  it("adds the organisation fee line and an unattributed LJP contribution", async () => {
+    flowReturns();
+    detailReturns({
+      real_staff_count: 2,
+      allowance_per_yl: 40,
+      total_org_fee: 15,
+      ljp_to: null,
+      paid_ljp_contributions: 75,
+    });
+    renderRoute("/kompass/finance/statements/1/edit?stage=reimbursement");
+    expect(await screen.findByText("Orga-Pauschale")).toBeInTheDocument();
+    expect(screen.getByText("LJP-Beitrag")).toBeInTheDocument();
+  });
+
+  it("doesn't crash the preflight check for a statement with no short description", async () => {
+    flowReturns([]);
+    detailReturns({ short_description: null });
+    renderRoute("/kompass/finance/statements/1/edit?stage=purpose");
+    expect(
+      await screen.findByRole("heading", { name: "Wofür ist diese Abrechnung?" }),
+    ).toBeInTheDocument();
+  });
+
+  it("cancels a brand-new statement back to the list", async () => {
+    flowReturns();
+    listReturns();
+    const { user } = renderRoute("/kompass/finance/statements/new");
+    await screen.findByRole("heading", { name: "Wofür ist diese Abrechnung?" });
+    await user.click(screen.getByRole("button", { name: "Abbrechen" }));
+    expect(await screen.findByPlaceholderText("Suchen…")).toBeInTheDocument();
+  });
+
+  it("types an optional explanation and steps back within the flow", async () => {
+    flowReturns([]);
+    detailReturns();
+    const { user } = renderRoute("/kompass/finance/statements/1/edit?stage=receipts");
+    await screen.findByRole("heading", { name: "Belege" });
+    await user.click(screen.getByRole("button", { name: "Zurück" }));
+    await screen.findByRole("heading", { name: "Wofür ist diese Abrechnung?" });
+    await user.type(screen.getByLabelText(/Erklärung/), "Siehe Anhang.");
+    expect(screen.getByDisplayValue("Siehe Anhang.")).toBeInTheDocument();
+  });
+
+  it("reports a refused bill edit", async () => {
+    flowReturns();
+    detailReturns({ bills: [BILL] });
+    server.use(
+      http.patch(api("/api/finance/bills/12"), () =>
+        HttpResponse.json({ detail: "Nicht erlaubt." }, { status: 403 }),
+      ),
+    );
+    const { user } = renderRoute("/kompass/finance/statements/1/edit?stage=receipts");
+    await user.click(await screen.findByRole("button", { name: "Bearbeiten" }));
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+    expect(await screen.findByText("Dazu fehlt dir die Berechtigung.")).toBeInTheDocument();
+  });
+
+  it("reports a refused bill deletion", async () => {
+    flowReturns();
+    detailReturns({ bills: [BILL] });
+    server.use(
+      http.delete(api("/api/finance/bills/12"), () =>
+        HttpResponse.json({ detail: "Nicht erlaubt." }, { status: 403 }),
+      ),
+    );
+    const { user } = renderRoute("/kompass/finance/statements/1/edit?stage=receipts");
+    await user.click(await screen.findByRole("button", { name: "Entfernen" }));
+    await user.click(
+      within(await screen.findByRole("dialog")).getByRole("button", { name: "Entfernen" }),
+    );
+    expect(await screen.findByText("Dazu fehlt dir die Berechtigung.")).toBeInTheDocument();
+  });
+
+  it("abandons an edit and an in-progress add without saving either", async () => {
+    flowReturns();
+    detailReturns({ bills: [BILL] });
+    const { user } = renderRoute("/kompass/finance/statements/1/edit?stage=receipts");
+    await user.click(await screen.findByRole("button", { name: "Bearbeiten" }));
+    const editForm = within(document.querySelector(".beleg-form") as HTMLElement);
+    await user.click(editForm.getByRole("button", { name: "Abbrechen" }));
+    expect(await screen.findByRole("button", { name: "Bearbeiten" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "+ Beleg hinzufügen" }));
+    fireEvent.change(screen.getByLabelText(/Beleg-Bild/), { target: { files: [] } });
+    const addForm = within(document.querySelector(".beleg-form") as HTMLElement);
+    await user.click(addForm.getByRole("button", { name: "Abbrechen" }));
+    expect(
+      await screen.findByRole("button", { name: "+ Beleg hinzufügen" }),
+    ).toBeInTheDocument();
+  });
+});
+
 describe("statement detail — draft", () => {
   it("is a record view that hands a draft back to the flow", async () => {
     flowReturns([]);
@@ -1152,6 +1421,24 @@ describe("review pipeline", () => {
     const { user } = openStage("expenses", { bills: [bill()] });
     await user.click(await screen.findByRole("button", { name: "Übernehmen" }));
     expect(await screen.findByText("Dazu fehlt dir die Berechtigung.")).toBeInTheDocument();
+  });
+
+  it("skips the optimistic cache write when the fetched statement's id doesn't match the route", async () => {
+    useMe({ permissions: ["finance.process_statementsubmitted"] });
+    let patched: Record<string, unknown> | null = null;
+    server.use(
+      http.get(api("/api/finance/statements/2"), () =>
+        HttpResponse.json(statement({ ...SUBMITTED, bills: [bill()] })),
+      ),
+      http.get(api("/api/finance/statements/1/transactions"), () => HttpResponse.json([])),
+      http.patch(api("/api/finance/bills/12"), async ({ request }) => {
+        patched = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(bill({ costs_covered: true }));
+      }),
+    );
+    const { user } = renderRoute("/kompass/finance/statements/2/review?stage=expenses");
+    await user.click(await screen.findByRole("button", { name: "Übernehmen" }));
+    await waitFor(() => expect(patched).toEqual({ costs_covered: true }));
   });
 
   it("selects another expense to inspect its receipt", async () => {
@@ -1461,6 +1748,106 @@ describe("review pipeline", () => {
     const nav = within(document.querySelector(".flow-nav") as HTMLElement);
     await user.click(nav.getByRole("button", { name: "Zurück" }));
     expect(await screen.findByRole("heading", { name: "Ausgaben prüfen" })).toBeInTheDocument();
+  });
+
+  it("returns to the statement's own page from Zurück", async () => {
+    const { user } = openStage("expenses", { bills: [bill()] });
+    await screen.findByRole("heading", { name: "Ausgaben prüfen" });
+    const header = within(document.querySelector(".page-header") as HTMLElement);
+    await user.click(header.getByRole("button", { name: "Zurück" }));
+    expect(await screen.findByRole("button", { name: "Prüfen & auszahlen" })).toBeInTheDocument();
+  });
+
+  it("jumps directly between review stages from the rail", async () => {
+    const { user } = openStage("expenses", { bills: [bill()] }, [TRANSACTION]);
+    await screen.findByRole("heading", { name: "Ausgaben prüfen" });
+    await user.click(await screen.findByRole("button", { name: /Buchungen/ }));
+    expect(await screen.findByRole("heading", { name: "Buchungen" })).toBeInTheDocument();
+  });
+
+  it("names who submitted a statement that belongs to a trip", async () => {
+    openStage("expenses", { submitted_by: { id: 7, name: "Hannah Beckers" } });
+    expect(await screen.findByText("Eingereicht von Hannah Beckers")).toBeInTheDocument();
+  });
+
+  it("omits the submitted-by line for a statement without a trip", async () => {
+    openStage("expenses", { excursion: null });
+    await screen.findByRole("heading", { name: "Ausgaben prüfen" });
+    expect(screen.queryByText(/Eingereicht von/)).not.toBeInTheDocument();
+  });
+
+  it("flags a bill with no payer in the review list", async () => {
+    openStage("expenses", { bills: [bill({ paid_by: null })] });
+    expect(await screen.findByText("kein Zahler eingetragen")).toBeInTheDocument();
+  });
+
+  it("saves default values for a transaction that started with no amount, reference or ledger", async () => {
+    const bare = { ...TRANSACTION, amount: null, reference: null, ledger: null };
+    let patched: Record<string, unknown> | null = null;
+    server.use(
+      http.patch(api("/api/finance/transactions/20"), async ({ request }) => {
+        patched = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(TRANSACTION);
+      }),
+    );
+    const { user } = openStage("bookings", {}, [bare]);
+    await screen.findByText("Mila Nowak");
+    await user.click(await screen.findByRole("button", { name: "Bearbeiten" }));
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+
+    await waitFor(() => expect(patched).not.toBeNull());
+    expect(patched).toMatchObject({ amount: 0, reference: "", member_id: 9, ledger_id: null });
+  });
+
+  it("reassigns the recipient, reference and account while editing a booking", async () => {
+    let patched: Record<string, unknown> | null = null;
+    server.use(
+      http.patch(api("/api/finance/transactions/20"), async ({ request }) => {
+        patched = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(TRANSACTION);
+      }),
+    );
+    const { user } = openStage("bookings", {}, [{ ...TRANSACTION, ledger: null }]);
+    await screen.findByText("Mila Nowak");
+    await user.click(await screen.findByRole("button", { name: "Bearbeiten" }));
+
+    const row = document.querySelector(".table-wrap tbody tr") as HTMLElement;
+    const selects = within(row)
+      .getAllByRole("button")
+      .filter((b) => b.className.includes("ss-trigger"));
+    await user.click(selects[0]);
+    await user.click(dropdown().getByRole("button", { name: "Hannah Beckers" }));
+
+    const reference = within(row).getByDisplayValue("Fahrtkosten");
+    await user.clear(reference);
+    await user.type(reference, "Materialkauf");
+
+    await user.click(selects[1]);
+    await user.click(dropdown().getByRole("button", { name: "Sektionskonto" }));
+
+    await user.click(within(row).getByRole("button", { name: "Speichern" }));
+
+    await waitFor(() => expect(patched).not.toBeNull());
+    expect(patched).toMatchObject({ member_id: 7, reference: "Materialkauf", ledger_id: 2 });
+  });
+
+  it("omits the excursion clause in the empty bookings state without a trip", async () => {
+    openStage("bookings", { excursion: null }, []);
+    expect(await screen.findByText(/Noch keine Buchungen/)).toBeInTheDocument();
+    expect(screen.queryByText(/sowie Entschädigung und Zuschüssen/)).not.toBeInTheDocument();
+  });
+
+  it("shows a dash for a payout row with no ledger assigned", async () => {
+    openStage("payout", {}, [{ ...TRANSACTION, ledger: null }]);
+    const row = (await screen.findByText("Mila Nowak")).closest(".payout-row") as HTMLElement;
+    const ledgerSpan = row.querySelector(".payout-row-ledger") as HTMLElement;
+    expect(ledgerSpan.textContent).toBe("—");
+  });
+
+  it("flags a zero-amount transaction instead of blaming the IBAN", async () => {
+    openStage("payout", {}, [{ ...TRANSACTION, code: "", amount: 0 }]);
+    const row = (await screen.findByText("Mila Nowak")).closest(".payout-row") as HTMLElement;
+    expect(within(row).getByText("Betrag ist 0 €")).toBeInTheDocument();
   });
 });
 
