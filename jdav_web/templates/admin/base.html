@@ -1,4 +1,4 @@
-{% load i18n static jet_tags %}<!DOCTYPE html>
+{% load i18n static jet_tags common startpage_tags %}<!DOCTYPE html>
 {% get_current_language as LANGUAGE_CODE %}{% get_current_language_bidi as LANGUAGE_BIDI %}
 {% jet_get_current_theme as THEME %}
 {% jet_get_current_version as JET_VERSION %}
@@ -60,6 +60,10 @@ django.gettext = window.gettext
         </div>
         {% block usertools %}
         {% if user.is_active and user.is_staff or has_permission %}
+        {% get_documentation_url as doc_url %}
+        {% if doc_url %}
+        <a id="documentation-link" href="{{ doc_url }}" target="_blank"><span class="icon-question"></span> {% trans 'Documentation' %}</a>
+        {% endif %}
         <div id="user-tools">
             {% block welcome-msg %}
                 {% trans 'Welcome,' %}
@@ -81,7 +85,7 @@ django.gettext = window.gettext
                 {% if user.has_usable_password %}
                 <a href="{% url 'admin:password_change' %}">{% trans 'Change password' %}</a> /
                 {% endif %}
-                <a href="{% url 'admin:logout' %}">{% trans 'Log out' %}</a>
+                <a href="{% url 'admin:logout' %}" onclick="event.preventDefault(); document.getElementById('logout-form').submit();">{% trans 'Log out' %}</a>
             {% endblock %}
         </div>
         {% endif %}
@@ -217,7 +221,7 @@ django.gettext = window.gettext
                             </span>
                         </a>
                         {% endif %}
-                        <a href="{% url 'admin:logout' %}" class="sidebar-link icon">
+                        <a href="{% url 'admin:logout' %}" class="sidebar-link icon" onclick="event.preventDefault(); document.getElementById('logout-form').submit();">
                             <span class="sidebar-link-label">
                                 <span class="sidebar-link-icon icon-cross"></span>
                                 {% trans 'Log out' %}
@@ -334,6 +338,25 @@ django.gettext = window.gettext
                         </div>
                     {% endif %}
 
+                    {% get_external_links as external_links %}
+                    {% if external_links %}
+                    <div class="sidebar-section">
+                        <div class="sidebar-title">
+                            <a class="sidebar-title-link">{% trans "External links" %}</a>
+                        </div>
+                        {% for link in external_links %}
+                        <div>
+                            <a href="{{ link.url }}" class="sidebar-link" target="_blank">
+                                <span class="sidebar-right">
+                                    <span class="sidebar-right-arrow icon-arrow-right"></span>
+                                </span>
+                                <span class="sidebar-link-label">{{ link.title }}</span>
+                            </a>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+
                     <div class="sidebar-section last">
                         <div class="dialog-confirm" id="bookmarks-add-dialog" title="{% trans "Add bookmark" %}">
                             <form action="{% url "jet:add_bookmark" %}" method="POST" id="bookmarks-add-form">
@@ -447,5 +470,6 @@ django.gettext = window.gettext
 </div>
 <!-- END Container -->
 
+<form id="logout-form" method="post" action="{% url 'admin:logout' %}" style="display:none">{% csrf_token %}</form>
 </body>
 </html>{% endblock %}

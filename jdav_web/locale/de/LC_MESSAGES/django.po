@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-12-07 09:35+0100\n"
+"POT-Creation-Date: 2026-09-18 23:42+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -29,6 +29,9 @@ msgstr "Unzureichende Berechtigungen"
 msgid "You are not allowed to view %(name)s."
 msgstr "Du hast nicht die notwendigen Berechtigungen um %(name)s zu sehen."
 
+msgid "No member is linked to this account."
+msgstr "Diesem Konto ist kein Mitglied zugeordnet."
+
 msgid "Please keep filesize under {} MiB. Current filesize: {:10.2f} MiB."
 msgstr "Maximale Dateigröße {} MiB. Aktuelle Dateigröße: {:10.2f} MiB."
 
@@ -38,6 +41,34 @@ msgstr "Dateityp nicht unterstützt."
 msgid "Please keep filesize under {}. Current filesize: {}"
 msgstr "Maximale Dateigröße {}. Aktuelle Dateigröße: {}."
 
+msgid "Please enter your feedback."
+msgstr "Bitte gib dein Feedback ein."
+
+#, python-format
+msgid "Feedback is limited to %(limit)s characters."
+msgstr "Feedback ist auf %(limit)s Zeichen begrenzt."
+
+msgid "(empty)"
+msgstr "(leer)"
+
+msgid "Feedback"
+msgstr "Feedback"
+
+msgid "Message"
+msgstr "Nachricht"
+
+msgid "Received on"
+msgstr "Eingegangen am"
+
+msgid "Submitted by"
+msgstr "Eingereicht von"
+
+msgid "Page"
+msgstr "Seite"
+
+msgid "Browser"
+msgstr "Browser"
+
 msgid "Startpage"
 msgstr "Startseite"
 
@@ -46,6 +77,18 @@ msgstr "Berechtigungen"
 
 msgid "Important dates"
 msgstr "Wichtigen Daten"
+
+msgid "You cannot delete your own account."
+msgstr "Du kannst dein eigenes Konto nicht löschen."
+
+msgid "Registration key is invalid or has expired."
+msgstr "Der Registrierungscode ist ungültig oder abgelaufen."
+
+msgid "You entered a wrong password."
+msgstr "Das eingegebene Passwort ist falsch."
+
+msgid "Registration failed."
+msgstr "Die Registrierung ist fehlgeschlagen."
 
 msgid "Authentication"
 msgstr "Authentifizierung"
@@ -88,11 +131,18 @@ msgstr "Falls du denkst, dass das ein Fehler ist, bitte"
 msgid "contact us."
 msgstr "kontaktiere uns."
 
+msgid "Reset password"
+msgstr "Passwort zurücksetzen"
+
 msgid "Register"
 msgstr "Registrieren"
 
 msgid "Welcome, "
 msgstr "Willkommen, "
+
+msgid "To reset your password, please enter a new password below."
+msgstr ""
+"Um dein Passwort zurückzusetzen, gib bitte unten ein neues Passwort ein."
 
 msgid ""
 "To set your personal login data, please enter the password that you received."
@@ -100,8 +150,18 @@ msgstr ""
 "Um deine persönlichen Zugansdaten festzulegen, gib bitte das Passwort ein, "
 "das du erhalten hast."
 
+msgid "Username"
+msgstr "Benutzername"
+
 msgid "submit"
 msgstr "Einreichen"
+
+msgid ""
+"To reset your password for Kompass, please enter the password that you "
+"received."
+msgstr ""
+"Um dein Passwort für Kompass zurückzusetzen, gib bitte das Passwort ein, das "
+"du erhalten hast."
 
 msgid ""
 "To set your personal login data for Kompass, please enter the password that "
@@ -110,24 +170,28 @@ msgstr ""
 "Um deine persönlichen Zugangsdaten festzulegen, gib bitte das Passwort ein, "
 "das du erhalten hast."
 
+msgid "Password reset successful"
+msgstr "Passwort erfolgreich zurückgesetzt"
+
 msgid "Registration successful"
 msgstr "Zugangsdaten erfolgreich festgelegt"
+
+msgid "You successfully reset your password. You can now proceed to"
+msgstr ""
+"Du hast dein Passwort erfolgreich zurückgesetzt. Du kannst nun weiter zum"
 
 msgid "You successfully set your login data. You can now proceed to"
 msgstr ""
 "Du hast deine Zugangsdaten erfolgreich festgelegt. Du kannst nun weiter zum"
 
-msgid "You entered a wrong password."
-msgstr "Das eingegebene Passwort ist falsch."
+msgid "Documentation"
+msgstr "Dokumentation"
 
 msgid "Welcome,"
 msgstr "Willkommen, "
 
 msgid "View site"
 msgstr "Auf der Website anzeigen"
-
-msgid "Documentation"
-msgstr "Dokumentation"
 
 msgid "My Profile"
 msgstr "Mein Profil"
@@ -152,6 +216,9 @@ msgstr "Anwendungen verstecken"
 
 msgid "Show hidden"
 msgstr "Zeige Verstecktes"
+
+msgid "External links"
+msgstr "Externe Links"
 
 msgid "Add bookmark"
 msgstr "Lesezeichen hinzufügen"
@@ -182,6 +249,12 @@ msgstr "Anwendungsseite"
 
 msgid "current theme"
 msgstr "Aktuelles Thema"
+
+msgid "History"
+msgstr "Verlauf"
+
+msgid "View on site"
+msgstr "Auf der Website anzeigen"
 
 #, python-format
 msgid ""
@@ -252,41 +325,20 @@ msgstr "Ändern"
 msgid "View"
 msgstr "Anzeigen"
 
-msgid "View on site"
-msgstr "Auf der Website anzeigen"
-
 msgid "Delete?"
 msgstr "Löschen?"
 
-msgid "Unconfirm"
-msgstr "Bestätigung zurücknehmen"
+msgid ""
+"To submit the statement to the finance department, use \"Save and submit\". "
+"Submitted statements can no longer be edited. If you want to make further "
+"changes, use \"Save\" instead."
+msgstr ""
+"Um die Abrechnung einzureichen, verwende \"Speichern und einreichen\". "
+"Eingereichte Abrechnungen können nicht mehr verändert werden. Wenn du "
+"weitere Änderungen machen willst, verwende \"Speichern\"."
 
-msgid "Download summary"
-msgstr "Beleg herunterladen"
-
-msgid "Reduce transactions"
-msgstr "Überweisungen minimieren"
-
-msgid "Overview"
-msgstr "Übersicht"
-
-msgid "Submit"
-msgstr "Einreichen"
-
-msgid "Generate crisis intervention list"
-msgstr "Kriseninterventionsliste erstellen"
-
-msgid "Generate SJR application"
-msgstr "SJR Antrag erstellen"
-
-msgid "Generate seminar report"
-msgstr "Landesjugendplan Antrag erstellen"
-
-msgid "Generate overview"
-msgstr "Hinweise für Jugendleiter*innen erstellen"
-
-msgid "Finance overview"
-msgstr "Kostenübersicht"
+msgid "Save and submit"
+msgstr "Speichern und einreichen"
 
 msgid "Generate group overview"
 msgstr "Gruppenübersicht erstellen"
@@ -294,21 +346,19 @@ msgstr "Gruppenübersicht erstellen"
 msgid "Generate group checklist"
 msgstr "Gruppencheckliste erstellen"
 
-msgid "Request echo"
-msgstr "Rückmeldungsaufforderung verschicken"
-
-msgid "Invite as user"
-msgstr "Als Kompassbenutzer*in einladen"
-
-msgid "Request registration form"
-msgstr "Anmeldeformular anfragen"
-
-msgid "Demote to waiter"
-msgstr "Zurück auf die Warteliste setzen"
-
 msgid "Invite to group"
 msgstr "Zu Gruppe einladen"
 
 #, python-format
 msgid "Add another %(verbose_name)s"
 msgstr "%(verbose_name)s hinzufügen"
+
+msgid "Sign in"
+msgstr "Anmelden"
+
+msgid "Please sign in to continue."
+msgstr "Bitte melde dich an, um fortzufahren."
+
+msgid "Your username and password did not match. Please try again."
+msgstr ""
+"Benutzername und Passwort passen nicht zusammen. Bitte versuche es erneut."

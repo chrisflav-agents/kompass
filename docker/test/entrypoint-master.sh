@@ -2,6 +2,8 @@
 
 set -o errexit
 
+HTMLCOV_DIR=/app/jdav_web/htmlcov
+
 mysql_ready() {
 cd /app/jdav_web
 python << END
@@ -30,19 +32,37 @@ done
 
 cd /app
 
-if ! [ -f /tmp/completed_initial_run ]; then
-    echo 'Initialising kompass master container'
-
-    python jdav_web/manage.py compilemessages --locale de
-fi
+# Unconditional: the source tree is bind-mounted, so a `.po` updated on the
+# host leaves the compiled `.mo` behind and gettext falls back to the English
+# msgid for every message added since the catalogue was last built.
+# A subshell so the rest of the script keeps its own working directory;
+# scoped to the project tree, which is where every catalogue lives.
+(cd jdav_web && python manage.py compilemessages --locale de -v 0)
 
 cd jdav_web
 
+# Default verbosity to 2 if not set
+VERBOSITY=${DJANGO_TEST_VERBOSITY:-2}
+
+set +o errexit
+
 if [[ "$DJANGO_TEST_KEEPDB" == 1 ]]; then
-    coverage run manage.py test startpage finance members contrib logindata mailer material ludwigsburgalpin test_data jdav_web -v 2 --noinput --keepdb
+    coverage run manage.py test startpage finance members contrib logindata mailer material ludwigsburgalpin feedback test_data jdav_web -v $VERBOSITY --noinput --keepdb 2>&1 | tee "$HTMLCOV_DIR/test_output.txt"
 else
-    coverage run manage.py test startpage finance members contrib logindata mailer material ludwigsburgalpin test_data jdav_web -v 2 --noinput
+    coverage run manage.py test startpage finance members contrib logindata mailer material ludwigsburgalpin feedback test_data jdav_web -v $VERBOSITY --noinput 2>&1 | tee "$HTMLCOV_DIR/test_output.txt"
 fi
+TEST_EXIT_CODE=${PIPESTATUS[0]}
+
+set -o errexit
+
 coverage html --show-contexts
 coverage json -o htmlcov/coverage.json
-coverage report
+coverage report --show-missing
+coverage report --show-missing > htmlcov/coverage_report.txt
+
+echo "$TEST_EXIT_CODE" > "$HTMLCOV_DIR/test_exit_code.txt"
+echo "ok" > "$HTMLCOV_DIR/run_status.txt"
+
+echo "Saved coverage report in htmlcov/coverage_report.txt. Exiting."
+
+exit $TEST_EXIT_CODE

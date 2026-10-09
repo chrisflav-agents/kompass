@@ -1,16 +1,27 @@
+import difflib
+import json
+import subprocess
+import sys
+import tempfile
 from datetime import timedelta
+from itertools import islice
+from pathlib import Path
 from unittest.mock import Mock
 from unittest.mock import patch
 
+import export_openapi
 from contrib.admin import CommonAdminMixin
 from contrib.models import CommonModel
+from contrib.openapi import render_schema
 from contrib.rules import has_global_perm
+from django.conf import settings
 from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.test import RequestFactory
 from django.test import TestCase
+from django.utils import translation
 from django.utils.translation import gettext_lazy as _
 from rules.contrib.models import RulesModelBase
 from rules.contrib.models import RulesModelMixin
@@ -81,6 +92,19 @@ class CommonAdminMixinTestCase(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="testuser", password="testpass")
 
+    def _make_test_admin(self, documentation_url=None):
+        class TestModel:
+            _meta = Mock()
+            _meta.app_label = "test"
+
+        class TestAdmin(CommonAdminMixin, admin.ModelAdmin):
+            pass
+
+        if documentation_url is not None:
+            TestAdmin.documentation_url = documentation_url
+
+        return TestAdmin(TestModel, admin.site)
+
     def test_formfield_for_dbfield_with_formfield_overrides(self):
         """Test formfield_for_dbfield when db_field class is in formfield_overrides"""
 
@@ -107,6 +131,70 @@ class CommonAdminMixinTestCase(TestCase):
 
         # Verify that the formfield_overrides were used
         self.assertIsNotNone(result)
+
+    def test_changelist_view_injects_documentation_url(self):
+        admin_instance = self._make_test_admin(
+            documentation_url="/static/docs/user_manual/members.html"
+        )
+        request = RequestFactory().get("/")
+        request.user = self.user
+        captured = {}
+
+        def mock_changelist(self, request, extra_context=None):
+            captured.update(extra_context or {})
+            return Mock()
+
+        with patch.object(admin.ModelAdmin, "changelist_view", mock_changelist):
+            admin_instance.changelist_view(request)
+
+        self.assertEqual(captured["documentation_url"], "/static/docs/user_manual/members.html")
+
+    def test_changelist_view_no_documentation_url(self):
+        admin_instance = self._make_test_admin()
+        request = RequestFactory().get("/")
+        request.user = self.user
+        captured = {}
+
+        def mock_changelist(self, request, extra_context=None):
+            captured.update(extra_context or {})
+            return Mock()
+
+        with patch.object(admin.ModelAdmin, "changelist_view", mock_changelist):
+            admin_instance.changelist_view(request)
+
+        self.assertNotIn("documentation_url", captured)
+
+    def test_change_view_injects_documentation_url(self):
+        admin_instance = self._make_test_admin(
+            documentation_url="/static/docs/user_manual/finance.html"
+        )
+        request = RequestFactory().get("/")
+        request.user = self.user
+        captured = {}
+
+        def mock_change_view(self, request, object_id, form_url="", extra_context=None):
+            captured.update(extra_context or {})
+            return Mock()
+
+        with patch.object(admin.ModelAdmin, "change_view", mock_change_view):
+            admin_instance.change_view(request, "1")
+
+        self.assertEqual(captured["documentation_url"], "/static/docs/user_manual/finance.html")
+
+    def test_change_view_no_documentation_url(self):
+        admin_instance = self._make_test_admin()
+        request = RequestFactory().get("/")
+        request.user = self.user
+        captured = {}
+
+        def mock_change_view(self, request, object_id, form_url="", extra_context=None):
+            captured.update(extra_context or {})
+            return Mock()
+
+        with patch.object(admin.ModelAdmin, "change_view", mock_change_view):
+            admin_instance.change_view(request, "1")
+
+        self.assertNotIn("documentation_url", captured)
 
 
 class UtilsTestCase(TestCase):
@@ -186,3 +274,94 @@ class UtilsTestCase(TestCase):
         # Dates should be consecutive weeks
         self.assertEqual(result[1] - result[0], timedelta(days=7))
         self.assertEqual(result[2] - result[1], timedelta(days=7))
+
+
+class ExportOpenapiTest(TestCase):
+    """The schema export must not depend on the ambient language."""
+
+    def test_the_document_is_rendered_in_the_source_language(self):
+        document = render_schema()
+        schema = json.loads(document)
+        self.assertIn("openapi", schema)
+
+        # A title django-ninja leaves lazy: it only becomes text in the
+        # encoder, so it used to come out translated even when the rest did
+        # not, giving a document in two languages at once.
+        intervention = schema["components"]["schemas"]["LJPInterventionOut"]["properties"]
+        self.assertEqual(intervention["date_start"]["title"], "Starting time")
+        self.assertNotIn("Zeitpunkt", document)
+
+        # Casing is django-ninja's business — it title-cases a title it
+        # resolved itself and leaves a lazy one alone — so assert the language,
+        # which is ours, and not the capital D.
+        properties = schema["components"]["schemas"]["GroupOut"]["properties"]
+        self.assertEqual(properties["description"]["title"].lower(), "description")
+
+    def test_it_renders_the_same_text_whatever_language_is_active(self):
+        with translation.override("de"):
+            under_german = render_schema()
+        with translation.override(None):
+            under_none = render_schema()
+        self.assertEqual(under_german, under_none)
+
+    def test_the_committed_document_is_up_to_date(self):
+        """Re-exporting has to reproduce ``frontend/openapi.json`` byte for byte.
+
+        These settings name their own domains, so a ``help_text`` that
+        interpolates one fails here as loudly as a document nobody re-exported.
+
+        The script gets its own interpreter on purpose: that is the documented
+        recipe, and rendering inside the test process instead picks up the
+        casing of the titles django-ninja resolved when the API was first
+        imported, which happens before any test runs. The child reads
+        ``DJANGO_SETTINGS_MODULE`` from the environment, so it exports under
+        the deployment's settings rather than under a ``--settings`` flag.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "openapi.json"
+            script = Path(settings.BASE_DIR) / "export_openapi.py"
+            try:
+                subprocess.run(
+                    [sys.executable, str(script), "--output", str(output)],
+                    cwd=settings.BASE_DIR,
+                    capture_output=True,
+                    check=True,
+                )
+            except subprocess.CalledProcessError as exc:  # pragma: no cover
+                self.fail(exc.stderr.decode())
+            exported = output.read_text(encoding="utf-8")
+        committed = Path(settings.BASE_DIR).parent / "frontend" / "openapi.json"
+        current = committed.read_text(encoding="utf-8")
+        # Half a megabyte is past the length at which the assertions diff for
+        # themselves, and the interesting failure is a line or two, so hand the
+        # first lines that moved to the message. Diffing two equal documents
+        # costs well under a tenth of a second.
+        moved = "".join(
+            islice(
+                difflib.unified_diff(
+                    current.splitlines(keepends=True),
+                    exported.splitlines(keepends=True),
+                    "committed",
+                    "exported",
+                ),
+                40,
+            )
+        )
+        self.assertEqual(
+            exported,
+            current,
+            "frontend/openapi.json is stale, re-export it with export_openapi.py\n" + moved,
+        )
+
+    def test_the_script_writes_the_document(self):
+        active = translation.get_language()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                output = Path(tmp) / "openapi.json"
+                with patch("builtins.print"):
+                    self.assertEqual(export_openapi.main(["--output", str(output)]), 0)
+                written = output.read_text(encoding="utf-8")
+        finally:
+            translation.activate(active)
+        self.assertIn("openapi", json.loads(written))
+        self.assertTrue(written.endswith("\n"))
