@@ -926,7 +926,7 @@ describe("submission flow — remaining branches", () => {
   });
 
   it("keeps a typed description instead of overwriting it with the trip's name", async () => {
-    let resolveDetail: (value: unknown) => void = () => {};
+    let resolveDetail: (value: typeof EXCURSION_DETAIL) => void = () => {};
     server.use(
       http.get(api("/api/members/excursions"), () =>
         HttpResponse.json([{ id: 3, code: "F26-01", name: "Skifreizeit" }]),
