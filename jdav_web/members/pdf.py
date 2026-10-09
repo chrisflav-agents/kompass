@@ -11,7 +11,9 @@ from contrib.media import find_template
 from contrib.media import media_dir
 from contrib.media import media_path
 from contrib.media import serve_media
+from django.conf import settings
 from django.template.loader import get_template
+from django.utils.translation import gettext_lazy as _
 from PIL import Image
 from pypdf import PageObject
 from pypdf import PdfReader
@@ -19,6 +21,32 @@ from pypdf import PdfWriter
 from utils import normalize_filename
 
 logger = logging.getLogger(__name__)
+
+
+class TexRenderError(RuntimeError):
+    """``pdflatex`` left no usable PDF behind for a rendered template.
+
+    ``pdflatex`` is not reliably loud about this. A document whose body renders
+    to nothing — the group checklist on an installation where no group is
+    flagged ``show_website``, for instance — ends in "No pages of output" and
+    still *exits 0*, leaving a zero-byte ``.pdf`` behind. The browser saves a
+    PDF it cannot open, so the render raises instead and the caller either
+    refuses up front or the failure reaches the log.
+
+    Only what this run left behind is checked. Each render gets its own
+    unique filename (``normalize_filename`` in ``utils.py``), so this is
+    never left looking at a concurrent request's file instead of its own.
+    """
+
+
+#: The one way the group checklist reaches that dead end in practice, and the
+#: refusal both callers (the admin action and the API route) show for it. Every
+#: page of the checklist is one group flagged ``show_website``, so on an
+#: installation where none is, there is nothing to typeset at all.
+NO_PUBLIC_GROUPS = _(
+    "No group is marked as shown on the website, so the checklist would be empty. "
+    "Mark the groups it should cover as shown on the website and try again."
+)
 
 
 def serve_pdf(filename_pdf):
@@ -45,7 +73,13 @@ def render_docx(name, template_path, context, date=None, save_only=False):
     filename_docx = filename + ".docx"
     oldwd = os.getcwd()
     os.chdir(media_dir())
-    subprocess.call(["pandoc", filename_tex, "-o", filename_docx])
+    result = subprocess.run(
+        ["pandoc", filename_tex, "-o", filename_docx],
+        capture_output=True,
+        text=True,
+    )
+    logger.debug(f"Pandoc stdout: {result.stdout}")
+    logger.debug(f"Pandoc stderr: {result.stderr}")
     time.sleep(1)
     os.chdir(oldwd)
     if save_only:
@@ -77,7 +111,13 @@ def render_tex(name, template_path, context, date=None, save_only=False):
     # compile using pdflatex
     oldwd = os.getcwd()
     os.chdir(media_dir())
-    subprocess.call(["pdflatex", "-halt-on-error", filename_tex])
+    result = subprocess.run(
+        ["pdflatex", "-halt-on-error", filename_tex],
+        capture_output=True,
+        text=True,
+    )
+    logger.debug(f"pdflatex stdout: {result.stdout}")
+    logger.debug(f"pdflatex stderr: {result.stderr}")
     time.sleep(1)
 
     # do some cleanup
@@ -89,6 +129,21 @@ def render_tex(name, template_path, context, date=None, save_only=False):
     # os.remove(filename_table)
 
     os.chdir(oldwd)
+
+    pdf_path = media_path(filename_pdf)
+    if result.returncode != 0 or not os.path.exists(pdf_path) or os.path.getsize(pdf_path) == 0:
+        # The .log is gone by now (cleaned up above), so keep pdflatex's own
+        # output. Only the tail of it: the ~90 lines before that are the .sty
+        # files it loaded, while the error and the "No pages of output" are at
+        # the very end.
+        logger.error(
+            "pdflatex produced no PDF for %s (exit %s):\n%s\n%s",
+            template_path,
+            result.returncode,
+            "\n".join(result.stdout.splitlines()[-40:]),
+            result.stderr,
+        )
+        raise TexRenderError(f"pdflatex produced no PDF for {template_path}")
 
     if save_only:
         return filename_pdf
@@ -180,3 +235,88 @@ def merge_pdfs(name, filenames, date=None, save_only=False):
     if save_only:
         return filename_pdf
     return serve_pdf(filename_pdf)
+
+
+def generate_crisis_intervention_list_pdf(
+    *,
+    name,
+    description,
+    code,
+    place,
+    destination,
+    groups,
+    staff,
+    start_date,
+    end_date,
+    tour_type,
+    tour_approach,
+    members,
+    filename_base=None,
+    save_only=False,
+):
+    """Generate a crisis intervention list PDF.
+
+    Args:
+        name: Activity name
+        description: Activity description
+        code: Activity code (e.g., K-260101)
+        place: Location of the activity
+        destination: Destination (optional, e.g., a peak)
+        groups: List or queryset of Group objects
+        staff: List or queryset of Member objects (youth leaders)
+        start_date: Start date of the activity
+        end_date: End date of the activity
+        tour_type: Tour type identifier (empty string for ad-hoc lists)
+        tour_approach: Tour approach identifier (empty string for ad-hoc lists)
+        members: List of Member objects participating in the activity
+        filename_base: Base name of the generated file. Defaults to the activity
+            name, or its description if the name is too long for a file name.
+        save_only: Return the file name of the generated PDF instead of an
+            HttpResponse serving it.
+
+    Returns:
+        HttpResponse with the generated PDF, or its file name if `save_only`
+    """
+    # Format groups string
+    groups_str = ", ".join([g.name for g in groups]) if groups else ""
+
+    # Format staff string
+    staff_str = ", ".join([s.name for s in staff]) if staff else ""
+
+    # Format time period string
+    # Handle both date and datetime objects
+    start_date_only = start_date.date() if hasattr(start_date, "date") else start_date
+    end_date_only = end_date.date() if hasattr(end_date, "date") else end_date
+
+    if start_date_only == end_date_only:
+        time_period_str = start_date_only.strftime("%d.%m.%Y")
+    else:
+        time_period_str = (
+            f"{start_date_only.strftime('%d.%m.%Y')} - {end_date_only.strftime('%d.%m.%Y')}"
+        )
+
+    context = {
+        "name": name,
+        "description": description,
+        "code": code,
+        "place": place,
+        "destination": destination,
+        "groups_str": groups_str,
+        "staff_str": staff_str,
+        "time_period_str": time_period_str,
+        "tour_type": tour_type,
+        "tour_approach": tour_approach,
+        "members": members,
+        "settings": settings,
+    }
+
+    if filename_base is None:
+        # Use description for filename if name is long, otherwise use name
+        filename_base = description if len(name) > 30 else name
+    return render_tex(
+        f"{filename_base}_Krisenliste",
+        "members/crisis_intervention_list.tex",
+        context,
+        date=start_date,
+        save_only=save_only,
+    )
